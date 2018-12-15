@@ -1,0 +1,21 @@
+"0","data(state.x77)
+# b.
+dfstat77 <- as.data.frame(state.x77)
+# c.
+names(dfstat77)[4] <- ""Life.Exp""
+names(dfstat77)[6] <- ""HS.Grad""
+# d.
+names(dfstat77)
+"
+"1","[1]"
+"1"," ""Population"""
+"1"," ""Income""    "
+"1"," ""Illiteracy"""
+"1"," ""Life.Exp""  "
+"1"," ""Murder""    "
+"1"," ""HS.Grad""   "
+"1"," ""Frost""     "
+"1"," ""Area""      "
+"1","
+"
+"0","head(dfstat77, 15)"

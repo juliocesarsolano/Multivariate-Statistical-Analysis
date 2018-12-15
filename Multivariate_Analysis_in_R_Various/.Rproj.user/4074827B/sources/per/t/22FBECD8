@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1540676867819.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1164493252",
+    "id" : "22FBECD8",
+    "lastKnownWriteTime" : 1540676970,
+    "last_content_update" : 1540676970896,
+    "path" : "E:/1.Data/6. MONTAJE DE CURSOS/5. Geostatistics/BS_GROUP_2018/Multivariate_Statistical_Analysis/R_Exercises/Multivariate_Analysis_in_R_Various/ClusterAnalysis.Rmd",
+    "project_path" : "ClusterAnalysis.Rmd",
+    "properties" : {
+        "cursorPosition" : "77,32",
+        "scrollLine" : "54"
+    },
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

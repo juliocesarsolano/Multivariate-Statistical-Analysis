@@ -1,0 +1,387 @@
+---
+title: "Algrebra Lineal Basica con R"
+author: "Created By Julio SOLANO"
+date: "April 25, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Vectores
+
+* Muchas operaciones realizadas sobre datos multivariables son facilitados usando la notación de vector y matriz.
+* Utilizaremos letras minusculas pra denotar vectores.
+
+```{r vectors, echo=TRUE}
+
+# draw the vector
+
+plot(c(1,1),c(2,2), xlim=c(0,5), ylim=c(0,5))
+arrows(0, 0, 1, 2)
+text(1.3, 2, "v=(1,2)")
+
+
+x <- seq(2,8,2)
+x
+
+y <- 4:1
+y
+
+x+y # Suma de vectores
+
+crossprod(x,y) # crossprod retorna matriz 1x1, no un escalar.
+
+crossprod(x)
+x*y   # Multiplicación de vectores elemento por elemento
+
+x
+
+x %o% x # Producto xx’, es uma matriz nxn
+
+(x %o% x)[, 3] # Fila 3 del producto xx’. Tratado como vector 
+
+(x %o% x)[2,] # Fila 2 del producto xx’. Tratado como vector 
+
+diag(1, 4, 4) # Matriz identidad 4x4
+
+matrix(1, 4, 4) # Matriz 4x4 com todos sus elementos = 1
+
+```
+
+
+## 2. Matrices
+
+* Para crear una matriz en R se utiliza la función: 
+**matrix(data = NA, nrow = 1, ncol = 1, byrow = FALSE, dimnames = NULL)**
+
+donde matrix() corresponde al nombre de la función y todo lo que esta dentro de los parentesis son los argumentos de dicha funcion.  
+- **data**	es un vector de datos opcional  
+- **nrow**	número deseado de filas  
+- **ncol**	número deseado de columnas  
+- **byrow**	valor lógico. Si es falso (valor por defecto), la matriz se llena por orden columna, de otra manera se llenara primero por filas  
+- **dimnames** utilizado para darles nombres a las filas y a las columnas, respectivamente  
+
+* Utilizaremos letras mayúsculas para denotar matrices.
+
+* Para obtener más informacion sobre las matrices escriba **?matrix** y ejecutelo pulsando enter si trabaja directamente en la pagina principal de R o pulsando Ctrl + r si trabaja desde un script.
+
+```{r matrix, echo=TRUE}
+
+M1 <- matrix(data = c(5, 7, 13, 4, 1, 7, 14, 3, 11), nrow=3, ncol=3, byrow=F, dimnames=list(c("Blanco", "Negro", "Rojo"), c("Toyota", "Audi", "Nissan")))
+M1
+
+Azul<-c(8,5,7) # Agregando filas: con esto creamos el vector Azul con sus correspondientes elementos 
+M2 <- rbind(M1, Azul)
+
+Hyundai<-c(2,7,3,5) # Agregando columnas: con esto creamos el vector Hyundai con sus correspondientes elementos 
+M3 <- cbind(M1, Hyundai)
+
+matrix(1:16, 4, 4) # Matriz 4x4 del 1 al 16
+
+# Otra manera de crear matrices es a traves de vectores, los cuales seran nuestras columnas
+a <- c(1,2,3,4,5,6)
+b <- c(2,3,5,6,1,9)
+c <- c(3,5,5,5,10,8)
+d <- c(10,20,30,40,50,55)
+e <- c(7,8,9,4,6,10)
+
+# Crear una matriz a partir de los vectores anteriores
+M4 <- cbind(a,b,c,d,e)
+M4
+
+# Más formas de crear matrices... 
+M5 <- matrix(c( 5, -1, -2,
+               4,  4, -1,
+              -2,  5, -3,
+              -7, -8,  6),
+            byrow = T, nrow = 4, ncol = 3,
+            dimnames = list(c("P1", "P2", "P3", "P4"), c("V1", "V2", "V3")))
+M5
+
+M6 <- matrix(sample(c(0:100), 100, replace = FALSE), 10, 10) # Matriz 10x10 del 1 al 100
+M6
+
+# Dimensión de una matriz (mxn)
+dim(M4)
+
+t(matrix(1:16, 4, 4)) # Transpuesta de una matriz
+
+diag(t(matrix(1:16, 4, 4))) # Extrae la diagonal
+
+A <- matrix(data= c(1,2,3,2,4,6,3,6,9,4,8,12), nrow=3, ncol=4, byrow=F)
+A
+
+B <- matrix(data= c(2,4,6,4,8,12,6,12,18,8,16,24), nrow=3, ncol=4, byrow=F)
+B
+
+t(B) # Transpuesta de B (B'), se convierte en una matriz 4x3
+
+# data freme to matrix
+my.matrix <- as.matrix(M5)
+class(M5)
+
+```
+
+
+### 2.1. Suma de Matrices
+Dos matrices son conformables para la suma y resta si son de la misma dimension, teniendo esto en mente, en R podemos facilmente sumar y restar matrices indicando la suma con + y la resta con –
+
+```{r sum, echo=TRUE}
+
+A+B # Suma matricial
+
+```
+
+
+### 2.2. Multiplicacion de Matrices
+Hay dos formas de multiplicar matrices: la multiplicacion elemento a elemento y la multiplicacion definida por el ?lgebra matricial donde debe cumplirse la condicion de conformabilidad   para la multiplicacion donde el numero de columnas de la primera matriz debe ser igual al número de filas de la segunda. Para multiplicar dos matrices elemento a elemento, estas deben ser de igual dimension.
+
+La multiplicación elemento a elemento se indica con el símbolo ** * ** y la multiplicacion matricial con los simbolos **%*%**.
+
+
+```{r mult, echo=TRUE}
+
+A*B # Multiplicacion elemento por elemento
+
+A%*%t(B) # Multiplicacion matricial, 3x3
+
+```
+
+
+### 2.3. Determinante de una Matriz
+Para obtener el determinante de cualquier matriz, se usa la función **det()**, recuerdese que para poder calcular el determinante de cualquier matriz esta debe ser cuadrada.
+
+```{r det, echo=TRUE}
+
+D <- matrix(data = rnorm(25), nrow=5, ncol=5)
+D
+
+det(D)
+
+```
+
+
+### 2.4. Inversa de una Matriz
+Es muy sencillo calcular la inversa de una matriz en R, todo lo que se necesita es aplicar la funcion **solve()** a la matriz de la cual se desea obtener su inversa. *Es importante tener en en cuenta que sOlo las matrices cuyo determinante sea diferente de cero tiene tienen una inversa definida (son invertibles)*.
+
+```{r solve, echo=TRUE}
+
+A <- matrix(data=c(2,1,2,1,1,3,0,2,0), nrow = 3, ncol = 3, byrow = FALSE)
+A
+
+detA <- det(A) # Para verificar si A es invertible det(A)!=0
+detA
+
+InvA <- round(solve(A), digits = 3)
+
+A %*% InvA
+
+```
+
+
+### 2.5. Extrayendo la diagonal principal de una Matriz mxm
+En ocasiones es muy importante trabajar sólo con los valores de la diagonal principal de una matriz, por ejemplo en el caso de la diagonal de la matriz de varianzas y covarianzas, donde la diagonal contienen los valores de las varianzas de las variables aleatorias, en este caso resultara util contar con una funcion que nos proporciones esa informacion dada una matriz, esa funcion es **diag()**.
+
+```{r diag, echo=TRUE}
+diag(M1)
+```
+
+### 2.6. Generacion de una matriz unitaria mxm
+Si a la funcion diag() en vez de proporcionarle una matriz para que nos devuelva su diagonal, le proporcionamos un número (un escalar) nos devuelve una matriz unitaria con elementos en su diagonal principal igual al número que le hemos proporcionado y de dimensión igual a ese mismo número multiplicado por él mismo, puesto que la matriz unitaria es cuadrada, es decir que si a R le decimos que ejecute diag(3) nos construirá una matriz unitaria 3x3.
+
+```{r munit, echo=TRUE}
+diag(10)
+```
+
+
+### 2.7. Vector de Medias (filas y columnas)
+
+```{r means, echo=TRUE}
+
+a <- c(1,2,3,4,5,6)
+b <- c(2,3,5,6,1,9)
+c <- c(3,5,5,5,10,8)
+d <- c(10,20,30,40,50,55)
+e <- c(7,8,9,4,6,10)
+
+M4 <- cbind(a,b,c,d,e)
+M4
+
+rowMeans(M4)[1:6]  # Vector de medias por filas (row means)
+apply(M4,1,mean)[1:6]  # Vector de medias por filas (row means), otra manera
+
+rowMeans(M4)[1:5]  # Vector de medias por columnas (column means)
+apply(M4,2,mean)[1:5]
+apply(M4,2,median)[1:5]
+apply(M4,2,range)[1:5]
+
+```
+
+
+## 3. Sistemas de Ecuaciones Lineales
+
+Resolvamos el sistema:
+
+$x + y + 2z   = 3$  
+$2x + 4y – 3z = -3$  
+$3x + 6y -5z  = -5$  
+
+$AX=b$      
+
+$X= Inv(A)b$  
+
+```{r sistem, echo=TRUE}
+
+A <- matrix(data= c(1,2,3,1,4,6,2,-3,-5), nrow=3, ncol=3, byrow=F)
+A
+
+b <- c(3,-3,-5)
+b
+
+X <- solve(A,b)
+X
+
+```
+
+
+## 4. Matriz de Varianzas y Covarianzas
+
+En R utilizamos la funcion **cov()**
+
+```{r cova, echo=TRUE}
+
+a <- c(1,2,3,4,5,6)
+b <- c(2,3,5,6,1,9)
+c <- c(3,5,5,5,10,8)
+d <- c(10,20,30,40,50,55)
+e <- c(7,8,9,4,6,10)
+
+M4 <- cbind(a,b,c,d,e)
+M4
+
+cov(M4)
+
+# Ahora hagamos este mismo calculo de forma manual
+k <- ncol(M4) # numero de variables
+n <- nrow(M4) # numero de observaciones (sujetos)
+ 
+# Crea medias por columnas
+M4_mean <- matrix(data=1, nrow=n) %*% cbind(mean(a),mean(b),mean(c),mean(d),mean(e)) 
+ 
+# Crea una matriz centrada (C)
+CM4 <- M4 - M4_mean
+ 
+# Crea la matriz de covarianza
+covM4 <- round(((n-1)^-1) * t(CM4)  %*%  CM4, digits=3)
+covM4
+
+```
+
+
+## 5. Matriz de Correlacion
+
+En R utilizamos la funcion **cor()**
+
+```{r corr, echo=TRUE}
+
+a <- c(6,-3,4)
+b <- c(2,4,-4)
+c <- c(8,1,5)
+
+M5 <- cbind(a,b,c)
+M5
+
+round(cor(M5), digits = 2)
+
+```
+
+
+## 6. EigenValores y EigenVectores
+
+En R utilizamos la funcion **eigen()**
+
+```{r eigen, echo=TRUE}
+
+E <- matrix(c(13, -4, 2, -4, 11, -2, 2, -2, 8), 3, 3, byrow=TRUE) # Corresponde a una matriz de Varianza-Covarianza
+E
+
+ev <- eigen(E) # Extrae los componentes
+
+valores <- ev$values # Se reportan en orden decreciente
+valores
+
+vectores <- round(ev$vectors, digits = 3)
+vectores
+
+prod(eigen(E)$values)
+det(E)
+
+```
+
+
+## 7. Single value decomposition of a Matrix
+
+Any matrix A can be decomposed as $A=UDV^T$, where:  
+* D is a diagonal matrix, with d=rank(A) non-zero elements  	
+* The fist d rows of U are orthogonal basis for col(A)   
+* The fist d rows of V are orthogonal basis for row(A)  
+
+En R utilizamos la funcion **svd()**  
+
+        # y$d: vector containing the singular values of a Matrix  
+        # y$u: matrix with columns contain the left singular vectors of a Matrix   
+        # y$v: matrix with columns contain the right singular vectors of a Matrix  
+
+```{r svd, echo=TRUE}
+
+svd.matrix <- svd(E)
+
+svd.matrix$d
+svd.matrix$u
+svd.matrix$v
+
+```
+
+
+## 8. El rango de una Matriz
+
+The rank of a n x m matrix A, rk(A) is the maximal number of linearly independent columns (or rows); hence rk(A) <= min(n,m).
+
+```{r rank, echo=TRUE}
+
+require(Matrix)
+
+A <- diag( seq(1, 4, 1))
+A
+rankMatrix(A, method = "tolNorm2")
+
+B <- matrix(seq(1, 16, 1), nrow=4, byrow=TRUE)
+B
+rankMatrix(B, method = "tolNorm2")
+```
+
+
+# Anexos
+### Particion del Set de Datos (Training, Testing) - using sample function
+```{r, partition, warning=FALSE, message=FALSE}
+
+set.seed(12351) # setting seed to reproduce results of random sampling
+trainingRowIndex <- sample(1:nrow(M6), 0.85*nrow(M6))  # row indices for training data
+training <- M6[trainingRowIndex, ]  # model training data
+testing  <- M6[-trainingRowIndex, ]   # test data
+dim(training); dim(testing)
+
+```
+
+
+### Particion del Set de Datos (Training, Testing) - using caret package
+```{r message=FALSE, warning=FALSE}
+
+library(caret)
+        # inTrain <- createDataPartition(y = data$Factor, p = 0.6, list = FALSE)
+        # training <- data[inTrain,]; testing <- data[-inTrain,]
+        # dim(training); dim(testing)
+
+```

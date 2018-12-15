@@ -1,0 +1,500 @@
+---
+title: "Discriminant Function Analysis in R"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+params: 
+  fast: TRUE
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    highlight: kate
+    widescreen: yes
+    footer: <a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+bibliography: Loaded.bib
+csl: apa.csl
+---
+
+```{r setup, include=FALSE}
+options(digits = 2, scipen = 10)
+knitr::opts_chunk$set(echo = TRUE)
+ev <- T
+library(klaR)
+library(magrittr)
+library(candisc)
+library(tables)
+library(knitr)
+library(broom)
+library(pander)
+library(ztable)
+library(MASS)
+library(dplyr)
+library(ggplot2)
+
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("table.style","rmarkdown")
+panderOptions("missing","")
+pvalueAPA <- function(p, inline = FALSE, mindigits = 2, maxdigits = 3){
+   fp <- function(x){
+      p.round <- ifelse(x > 0.5 * 10 ^ (-1 * mindigits),mindigits,maxdigits)
+  if (x > 0.5 * 10 ^ (-1 * p.round)) {
+    paste0(ifelse(inline,"$p=", ""),
+           sub(pattern = "0.", 
+               replacement = ".", 
+               formatC(x, p.round, format = "f")),
+           ifelse(inline,"$", ""))
+    } else {
+      paste0(ifelse(inline, "$p<","<"),
+             sub(pattern = "0.", 
+                 replacement =  ".",
+                 10 ^ (-1 * maxdigits)),
+             ifelse(inline,"$",""))
+    }
+  }
+  sapply(p, fp)
+}
+manovaTable <- function(m, caption = "MANOVA Table", test = "Pillai"){
+  require(broom)
+  require(pander)
+  require(dplyr)
+  require(heplots)
+  etaSquared <- etasq(m,test = test) %>% as.data.frame()
+  rownames(etaSquared) <- NULL
+  testName <- switch(test,
+                     Pillai = "Pillai's Trace",
+                     Wilks = "Wilks' $\\Lambda$",
+                     `Hotelling-Lawley` = "Hotelling-Lawley's Trace",
+                     Roy = "Roy's Largest Root")
+  m %>% manova %>%
+    tidy(test = test) %>%
+    mutate(p.value = pvalueAPA(p.value),
+           term = gsub(x = term, 
+                       pattern = ":",
+                       replacement = " $\\\\times$ ") ) %>%
+    cbind(etaSquared) %>% 
+    set_colnames(c("Factor",
+                   "df",
+                   testName,
+                   "$F$",
+                   "$df_1$",
+                   "$df_2$",
+                   "$p$",
+                   "$\\eta^2$")) %>%
+    pander(caption = caption,
+           round = 2,
+           split.tables = Inf,
+           style = "rmarkdown",
+           emphasize.rownames = FALSE,
+           keep.trailing.zeros = TRUE,
+           table.alignment.rownames = "left",
+           missing = "",
+           justify = "lccccccc")
+}
+manovaUnivariateTable <- function(m, caption = "Univariate Analyses"){
+  require(broom)
+  require(pander)
+  require(dplyr)
+  require(car)
+  require(lm.beta)
+  require(tidyr)
+  beta <- lm.beta(m)$standardized.coefficients %>% as.data.frame()
+  beta <- cbind(term = rownames(beta),beta)
+  rownames(beta) <- NULL
+  beta <- beta %>% gather(key = "DV","beta",-term)
+  beta[beta$term == "(Intercept)","beta"] <- NA
+  m %>% tidy %>% 
+    mutate(response = ifelse(response == Lag(response),
+                             NA,
+                             response),
+           p.value = pvalueAPA(p.value),
+           term = gsub(x = term, 
+                       pattern = ":",
+                       replacement = "LatexMultiply"))  %>% 
+    mutate(term = gsub(x = term, 
+                       pattern = "[[:punct:]]",
+                       replacement = "")) %>%
+    mutate(term = gsub(x = term, 
+                       pattern = "LatexMultiply",
+                       replacement = " $\\\\times$ ")) %>% 
+    cbind(beta[,"beta",drop = F]) %>% 
+    dplyr::select(response,term,estimate,std.error,beta,statistic,p.value) %>% 
+    set_colnames(c("Outcome",
+                   "Predictor",
+                   "$b$",
+                   "$\\sigma_b$",
+                   "$\\beta$",
+                   "$t$",
+                   "$p$")) %>% 
+    pander(caption = caption,
+           round = 2,
+           split.tables = Inf,
+           style = "rmarkdown",
+           emphasize.rownames = FALSE,
+           keep.trailing.zeros = TRUE,
+           table.alignment.rownames = "left",
+           missing = "",
+           justify = "llccccc")
+}
+```
+
+```{r MakeData, include = FALSE}
+set.seed(1)
+library(lavaan)
+m <- "
+g =~ 0.8 * Literacy + 0.8 * Numeracy + 0.9 * IQ + 0.3 * Openness
+w =~ 0.85 * Conscientiousness + 0.6 * Ambition  
+Income ~ 0.6 * g + 0.8 * w
+"
+n <- 1000
+d <- simulateData(m,sample.nobs = n, standardized = TRUE)
+apply(d,2,mean)
+
+hs <- sample(c(0,1,2),size = n,prob = c(0.75,0.15,0.10), replace = TRUE)
+d$HighSchool <- factor(hs, labels = c("Diploma","No Diploma","GED"))
+dropout <- (hs == 1) * 1
+GED <- (hs == 2) * 1
+d$IQ <- round((d$IQ + -1.3 * dropout + -0.3 * GED) * 15 + 100)
+d$Literacy <- round((d$Literacy + -1.3 * dropout + -0.3 * GED) * 100 + 500)
+d$Numeracy <- round((d$Numeracy + -1.7 * dropout + -0.5 * GED) * 100 + 500)
+d$Conscientiousness <- round((d$Conscientiousness + -1.5 * dropout + -1.5 * GED) * 10 + 50)
+d$Ambition <- round((d$Ambition + -0.5 * dropout + 0 * GED) * 10 + 50)
+d$Income <- round(100 * ((d$Income - 1.5 * dropout - 1.1 * GED + 8.5) ^ 3))
+write.csv(x = d, file = "DFA.csv", row.names = F)
+
+```
+
+
+# What is Discriminant Function Analysis?
+
+It is MANOVA in reverse. 
+
+- MANOVA has categorical predictors and continuous outcome variables. 
+- DFA has continuous predictors and categorical outcomes.
+
+# What is DFA used for?
+
+#. Prediction of categories from continuous variables
+#. Follow-up of MANOVA
+
+# Why is is called "Discriminant Function" Analysis?
+
+In DFA, the continuous predictors are used to create a *discriminant function* (AKA *canonical variate*). This is a linear combination the predictor variables that maximizes the differences between groups.
+
+If there are only two groups in the outcome variable, the mean difference on $V$ is maximally large between the two groups.
+
+$$V=b_1 X_1+b_2 X_2+...+b_k X_k$$
+
+Thus, the  *V* function *discriminates* between the two groups.
+
+If there are three groups, there are two discriminant functions:
+
+$$V_1=b_{11} X_1+b_{21} X_2+...+b_{k1} X_k$$
+$$V_2=b_{12} X_1+b_{22} X_2+...+b_{k2} X_k$$
+
+Often the first function discriminates between 2 groups and a third and the second function discrimates between the 2 groups that were lumped together in the first discriminant function.
+
+If there are *k* groups, there are *k* &minus; 1 discriminant functions.
+
+# Multivariate tests
+
+
+#. Pillai's Trace $=\text{tr}(\mathbf{(E+H)}^{-1}\mathbf{H})$
+#. Wilks' $\Lambda=|\mathbf{H}|/|\mathbf{E}|$
+#. Hotelling-Lawley's Trace $=\text{tr}(\mathbf{E}^{-1}\mathbf{H})$
+#. Roy's Largest Root: Largest eigenvalue of $\mathbf{E}^{-1}\mathbf{H}$
+
+Pillai's Trace appears to be the most robust test if assumptions have been violated (though it likely won't make much difference).
+
+# Effect Size
+
+$$\eta^2 = 1- \Lambda$$
+
+This is how much variance is shared with the grouping variable and the discriminant functions.
+
+# Assumptions
+
+1. The predictors are *multivariate normal* within groups. This assumption implies that the predictors have linear relationships.
+3. Homogeneity of Covariance (within groups).
+2. Independence
+
+If the assumptions for a MANOVA are met (with predictors and outcomes switched), the assumptions for DFA are met.
+
+# Multicollinearity
+
+Having highly correlated predictors creates the same problems for DFA as with multiple regression.
+
+# Data with Descriptives
+
+```{r}
+library(pander)
+library(magrittr)
+library(dplyr)
+
+d <- read.csv("http://my.ilstu.edu/~wjschne/444/DFA.csv")
+d %>% head %>% pander
+
+library(tables)
+tabular( Literacy + Numeracy + IQ + Openness + Conscientiousness + Ambition + Income ~ Heading() * HighSchool * (Heading(Mean) * mean + Heading(SD) *sd) * Format(sprintf("%.2f")), data = d) %>% pander(style = "multiline")
+
+library(ggplot2)
+ggplot(d %>% select(-Income) %>% tidyr::gather("Variable","Value",-HighSchool), aes(x = Value, fill = HighSchool)) + geom_density(alpha = 0.5, color = NA) +  theme(legend.position = "top") + facet_wrap(~Variable, scales = "free", nrow = 3)
+
+IncomeMeans <- d %>% group_by(HighSchool) %>% select(Income) %>%  summarise_each(funs(mean))
+
+ggplot(d, aes(Income, fill = HighSchool)) + geom_density(alpha = 0.5, color = NA) + theme(legend.position = "top") + geom_vline(data = IncomeMeans, aes(xintercept = Income, color = HighSchool))
+
+```
+
+
+# Linear Discriminant Analysis in R
+
+```{r}
+library(MASS)
+m <- lda(HighSchool ~ Literacy + Numeracy + IQ + Income + Conscientiousness + Ambition, d)
+m
+```
+
+# Observed vs. Predicted Categories
+
+```{r}
+p <- predict(m)
+freqtable <- table(p$class, d$HighSchool) 
+rownames(freqtable) <- paste0("Predicted ", d$HighSchool %>% levels)
+freqtable %>% addmargins %>% pander("Observed vs. Predicted Frequencies")
+prop.table(freqtable) %>% addmargins %>% pander("Proportions")
+```
+
+# Discriminant Functions
+
+```{r}
+data.frame(p$posterior, 
+           ObservedGroup = d$HighSchool, 
+           PredictedGroup = p$class, p$x) %>% 
+  head(20) %>% pander
+
+d$LDA1 <- p$x[,1]
+d$LDA2 <- p$x[,2]
+
+ggplot(d, aes(LDA1, fill = HighSchool)) + geom_density(alpha = 0.5, color = NA) + theme(legend.position = "top")
+
+ggplot(d, aes(LDA2, fill = HighSchool)) + geom_density(alpha = 0.5, color = NA) + theme(legend.position = "top")
+```
+
+# Plot 
+
+```{r}
+plot(m, abbrev = 1)
+
+gMeans <- d %>% group_by(HighSchool) %>% select(LDA1,LDA2) %>%  summarise_each(funs(mean)) 
+
+gMeans %>% pander
+
+ggplot(d, aes(LDA1, LDA2, color = HighSchool)) + 
+  geom_point(alpha = 0.5) + 
+  geom_text(data = gMeans, 
+            aes(label = HighSchool),
+            color = "black", 
+            vjust = 1.75) + 
+  geom_point(data = gMeans, 
+             aes(fill = HighSchool), 
+             size = 4, 
+             color = "black", 
+             pch = 21) + 
+  theme(legend.position = "none") +
+  coord_equal()
+
+library(klaR)
+drawparti(grouping = d$HighSchool, x = d$LDA1, y = d$LDA2, xlab = "LDA1", ylab = "LDA2")
+```
+
+
+
+# MANOVA follow-up
+
+```{r}
+m <- lm(cbind(Literacy, Numeracy, IQ, Income, Conscientiousness, Ambition) ~ HighSchool, d)
+m %>% manovaTable
+etasq(m %>% manova)
+heplot(m,variables = )
+library(candisc)
+cca <- m %>% candisc 
+cca %>% summary(coef = c("raw", "std", "structure"))
+cca$coeffs.raw %>% pander("Raw Coefficients")
+cca$coeffs.std %>% pander("Standardized Coefficients")
+cca$structure %>% pander("Structure Coefficients")
+par(xpd = T, bty = "n",pty = "s")
+heplot(cca)
+
+myColors <- hsv((c(0,120,240) + 80)/360,s = 0.8,v = 0.8,0.7)
+cca %>% plot(col = myColors, pch = rep(16,3), bty = "n", xpd = T)
+```
+
+# Reading Treatment Example
+
+```{r}
+md <- read.csv("HW4.csv") %>% rename(Decoding = Reading.Decoding, Fluency = Reading.Fluency,  Comprehension = Reading.Comprehension)
+mm <- lm(cbind(Decoding,Fluency,Comprehension) ~ LD * Treatment, md)
+heplots::etasq(mm)
+mm %>% manovaTable
+mm %>% manovaUnivariateTable
+```
+
+# Mean Plots
+
+Which is more informative?
+
+```{r}
+# Restructure data
+rmd <- md %>% gather(key = "Outcome",
+                     value = "Reading",
+                     Decoding,Fluency,Comprehension)
+
+ggplot(rmd, aes(LD, Reading, fill = LD)) + 
+  geom_violin(alpha = 0.5, color = NA) + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) + 
+  stat_summary(fun.data = "mean_cl_normal") +
+  facet_grid(Outcome ~ Treatment, scales = "free") +
+  theme(legend.position = "none") + 
+  xlab("Learning Disorder")
+
+ggplot(rmd, aes(Treatment, Reading, fill = Treatment)) + 
+  geom_violin(alpha = 0.5, color = NA) + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) +
+  stat_summary(fun.data = "mean_cl_normal") +
+  facet_grid(Outcome ~ LD, scales = "free") + 
+  theme(legend.position = "none")
+```
+
+# Canonical Discriminant Function Analysis
+
+With the `candisc` function, you can run each effect separately.
+
+## Treatment
+
+```{r}
+candisc(mm, term = "Treatment") %>% 
+  summary(coef = c("raw", "std", "structure")) 
+```
+
+# Canonical Discriminant Function Analysis
+
+With the `candisc` function, you can run each effect separately.
+
+## LD
+
+```{r}
+candisc(mm, term = "LD") %>% 
+  summary(coef = c("raw", "std", "structure"))
+```
+
+
+# Canonical Discriminant Function Analysis
+
+With the `candisc` function, you can run each effect separately.
+
+## LD $\times$ Treatment
+
+```{r}
+candisc(mm, term = "LD:Treatment") %>% 
+  summary(coef = c("raw", "std", "structure"))
+```
+
+# Canonical Discriminant Function Analysis
+
+You can get all your info at once with the `candiscList` function.
+
+```{r}
+cdl <- candiscList(mm)
+cdl %>% summary(coef = c("raw", "std", "structure"))
+
+cdl %>% plot
+```
+
+The plot looks okay, but let's do it right. First, we can put the structure coefficients into a nice table.
+
+```{r}
+cbind(cdl$LD$structure,
+      cdl$Treatment$structure,
+      cdl$`LD:Treatment`$structure) %>%
+  set_colnames(c("LD",
+                 "Treatment",
+                 "LD \u00D7 Treatment")) %>%
+  pander("Structure Coefficients")
+```
+
+We can use the `gridExtra` package to plot 2 ggplots together.
+
+```{r}
+library(gridExtra)
+p1 <- ggplot(cdl$LD$scores, aes(LD,Can1)) + 
+  geom_boxplot() + 
+  ylab("Canonical Variate for LD")
+
+p2 <- ggplot(cdl$LD$structure %>% 
+               as.data.frame %>% 
+               add_rownames(var = "Reading"), 
+             aes(Reading, Can1)) + 
+  geom_segment(aes(xend = Reading, yend = 0), 
+               arrow = arrow(type = "closed", 
+                             ends = "first", 
+                             angle = "15", 
+                             length = unit(0.15, "inches"))) +
+  ylim(0,1) + 
+  ylab("Structure Coefficients for LD")
+gridExtra::grid.arrange(p1,p2, nrow = 1, ncol = 2)
+```
+
+**Interpretation**: The Normal group did better on all three reading measures, but less so on Fluency.
+
+```{r}
+p1 <- ggplot(cdl$Treatment$scores, aes(Treatment,Can1)) +
+  geom_boxplot() + 
+  ylab("Canonical Variate for Treatment")
+
+p2 <- ggplot(cdl$Treatment$structure %>% 
+               as.data.frame %>% 
+               add_rownames(var = "Reading"), 
+             aes(Reading, Can1)) + 
+  geom_segment(aes(xend = Reading, yend = 0), 
+               arrow = arrow(type = "closed", 
+                             ends = "first", 
+                             angle = "15", 
+                             length = unit(0.15, "inches"))) +
+  ylim(0,1) + 
+  ylab("Structure Coefficients for Treatment")
+gridExtra::grid.arrange(p1,p2, nrow = 1, ncol = 2)
+```
+
+**Interpretation**: The intervention group did better on all three reading measures, but less so on Decoding.
+
+
+```{r}
+p1 <- ggplot(cdl$`LD:Treatment`$scores, aes(LD,Can1)) +
+  geom_boxplot() + 
+  facet_grid(~Treatment) + 
+  ylab("Canonical Variate for LD \u00D7 Treatment")
+
+p2 <- ggplot(cdl$`LD:Treatment`$structure %>% 
+               as.data.frame %>% 
+               add_rownames(var = "Reading"), 
+             aes(Reading, Can1)) + 
+  geom_segment(aes(xend = Reading, yend = 0), 
+               arrow = arrow(type = "closed", 
+                             ends = "first", 
+                             angle = "15", 
+                             length = unit(0.15, "inches"))) + 
+  ylim(0,1) + 
+  ylab("Structure Coefficients for LD \u00D7 Treatment")
+gridExtra::grid.arrange(p1,p2)
+```
+
+**Interpretation**: Decoding differentiates between people with and without dyslexia in the control group but not in the intervention group. It looks like the intervention may have succeeded in normalizing the decoding ability of people with dyslexia but did not help those withot dyslexia become better readers.

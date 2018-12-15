@@ -1,0 +1,7 @@
+{
+    "installOptions" : {
+        "installDependencies" : true,
+        "installFromRepository" : true,
+        "libraryPath" : "E:/1.Data/6. MONTAJE DE CURSOS/5. Geostatistics/BS_GROUP_2018/Multivariate_Statistical_Analysis/R_Exercises/Multiple_Regression_in_R/packrat/lib/x86_64-w64-mingw32/3.5.1"
+    }
+}

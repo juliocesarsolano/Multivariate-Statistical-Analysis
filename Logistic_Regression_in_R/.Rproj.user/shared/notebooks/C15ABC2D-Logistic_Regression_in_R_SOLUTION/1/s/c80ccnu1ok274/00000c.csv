@@ -1,0 +1,4 @@
+"0","library(XLConnect)
+"
+"2","Error: package ‘XLConnectJars’ 0.2.9 was found, but == 0.2.15 is required by ‘XLConnect’
+"

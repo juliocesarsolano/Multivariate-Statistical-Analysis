@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1541199117416.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1064026005",
+    "id" : "D6A28B7B",
+    "lastKnownWriteTime" : 1542069638,
+    "last_content_update" : 1542069638985,
+    "path" : "E:/1.Data/6. MONTAJE DE CURSOS/5. Geostatistics/BS_GROUP_2018/Multivariate_Statistical_Analysis/R_Exercises/Clusters_Analysis_K-Means_&_HClust_in_R/Clusters_Analysis_K-Means_and_HClust_in_R_SOLUTION.Rmd",
+    "project_path" : "Clusters_Analysis_K-Means_and_HClust_in_R_SOLUTION.Rmd",
+    "properties" : {
+        "cursorPosition" : "124,50",
+        "scrollLine" : "113"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

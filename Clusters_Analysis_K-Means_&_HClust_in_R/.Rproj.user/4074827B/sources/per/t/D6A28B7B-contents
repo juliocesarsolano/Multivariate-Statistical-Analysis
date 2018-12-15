@@ -1,0 +1,149 @@
+---
+title: "Clusters Analysis in R - kmeans() and hclust()"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Oct 20, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(69069)
+```
+
+
+# Loading Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+library(car)              # DavisThin dataset
+library(cluster)          # clusplot function
+library(fpc)              # pam function
+library(kableExtra)
+
+
+# Organizing Packge information for table
+packages <- c("car", "cluster", "fpc", "kableExtra")
+display <- c("Package","Title", "Maintainer", "Version", "URL")
+table <- matrix(NA, 1, NROW(display), dimnames = list(1, display))
+for(i in 1:NROW(packages)){
+list <- packageDescription(packages[i])
+table <- rbind(table, matrix(unlist(list[c(display)]), 1, NROW(display), byrow = T))
+}
+table[,NROW(display)] <- stringr::str_extract(table[,NROW(display)], ".+,")
+
+# Table of packages
+kable(table[-1,], format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Problem Definition
+En los siguientes ejercicios trataremos el análisis de conglomerados. Usaremos R para implementar el algoritmo k-means (k-medias) para el análisis de conglomerados y el conjunto de datos DavisThin. Este set de datos tiene 191 filas y 7 columnas y está incluido en el paquete car. Estos datos son parte de un conjunto de datos más grande para un estudio de trastornos de alimentación. Las siete variables en el marco de datos comprenden una escala de "unidad para delgadez", que se conformó sumando ciertos elementos durante una investigación.    
+
+
+# Exercise 1: Data Source
+```{r, e1, warning=FALSE, message=FALSE}
+mydata <- DavisThin
+mydata <- na.omit(mydata)    # eliminacion NA's
+mydata <- scale(mydata)      # estandarizacion de varibles, m=0, sd=1
+
+pairs(mydata)
+```
+
+
+# Exercise 2: Hierarchical Clustering
+There are four methods to measure distance between clusters:    
+- **complete**: pairwise similarty between all observations in cluster 1 and 2, uses largest of similarities  
+- **single**: same as above but uses the smallest of similarities  
+- **average**: same as above but uses average of similarities  
+- **centroid**: finds centroid of cluster 1 and 2, uses similarity between tow centroids  
+
+rule of thumb:  
+**complete** and **average** produce more balanced treess and are more commonly used.  
+**single** fuses observations in one at a time and produces more unblanced trees.  
+**centroid** can create inversion where clusters are put below single values. its not used often.  
+```{r, e2, warning=FALSE, message=FALSE}
+hclust.out <- hclust(dist(mydata, method = "euclidean"), method = "complete")
+
+# Inspect the result
+hclust.out
+
+# Plot hclust
+plot(hclust.out)
+```
+
+De acuerdo con el dendograma, podriamos utilizar entre 5 y 7 clusters.
+
+
+# Exercise 3: Selecting Number of Clusters (Cutting the tree)
+```{r, e3, warning=FALSE, message=FALSE}
+plot(hclust.out)
+abline(h = 5, col = "red", lty = 2)
+rect.hclust(hclust.out, k = 5, border=1:5)
+
+# Cut by number of clusters
+cut.hclust <- cutree(hclust.out, k = 5)
+cut.hclust
+```
+
+
+# Exercise 4: Determining the Number of Clusters (k-means)
+El algoritmo k-means (análisis no jerárquico) máximiza la homogéneidad dentro de los grupos y la heterogéneidad entre los grupos. 
+```{r, e4, warning=FALSE, message=FALSE}
+# Initialize total within sum of squares error: wss
+wss <- 0
+
+# For 1 to 15 cluster centers
+for (i in 1:15) {
+  km.out <- kmeans(mydata, centers = i, nstart = 30)
+  # Save total within sum of squares to wss variable
+  wss[i] <- km.out$tot.withinss
+}
+
+# Plot total within sum of squares vs. number of clusters
+plot(1:15, wss, type = "b", 
+     xlab = "Number of Clusters", 
+     ylab = "Within groups sum of squares")
+
+# Usando factoextra
+library(factoextra)
+fviz_nbclust(x = mydata, FUNcluster = kmeans, method = "wss", k.max = 15, 
+             diss = get_dist(mydata, method = "euclidean"), nstart = 50)
+```
+
+De acuerdo con la grafica, podriamos utilizar entre 5 y 7 clusters.
+
+
+# Exercise 5: Create the k-means model: km.out
+```{r, e5, warning=FALSE, message=FALSE}
+km.out1 <- kmeans(mydata, centers = 5, nstart = 15, algorithm = "Hartigan-Wong")
+names(km.out1)
+
+# Print the km.out object
+km.out     
+
+# Append cluster assignment
+mydata.km <- data.frame(mydata, km.out1$cluster)
+head(mydata.km, 10)
+```
+
+
+# Exercise 6: Visualizing and interpreting results of kmeans()
+```{r, e6, warning=FALSE, message=FALSE}
+# Scatter plot
+clusplot(mydata.km, km.out1$cluster, color=T, shade=T, labels=2, lines=0) 
+
+#ggplot(data = mydata, aes(x = x, y = y, color = km.out1$cluster)) + geom_point(size = 2.5) + theme_bw()
+```
+
+
+# Exercise 7: Comparing kmeans() and hclust()
+```{r, e7, warning=FALSE, message=FALSE}
+table(km.out1$cluster, cut.hclust)
+```

@@ -1,0 +1,4 @@
+"0","data.raw <- read.csv(""student-mat.csv"", header= TRUE, skip = 0, sep = ;)
+"
+"2","Error: unexpected ';' in ""data.raw <- read.csv(""student-mat.csv"", header= TRUE, skip = 0, sep = ;""
+"

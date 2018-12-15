@@ -1,0 +1,11 @@
+"0","# Logistic Regression
+caret.logreg.fit <- train(Rain ~ ., 
+                data = training, 
+                method = ""glm"",
+                metric = ""ROC"",
+                family = binomial(link = ""logit""),
+                trControl = fitControl)
+"
+"2","Error in na.fail.default(list(Rain = c(1L, 1L, 2L, 2L, 2L, 1L, 1L, 1L,  : 
+  missing values in object
+"

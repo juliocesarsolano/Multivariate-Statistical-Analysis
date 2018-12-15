@@ -1,0 +1,632 @@
+---
+title: "Conducting and Reporting ANOVAs in R"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    highlight: kate
+    widescreen: yes
+---
+<meta name="copyright" 
+content="<a href='http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+
+# Load Data
+
+```{r setup,echo=FALSE,message=FALSE}
+options(digits = 2)
+# Load packages
+library(Hmisc)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(readr)
+library(psych)
+library(broom)
+library(scales)
+library(tables)
+library(haven)
+library(tidyr)
+library(lsr)
+library(dummy)
+library(svglite)
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+
+options(digits = 2)
+
+rinline <- function(code) {
+  sprintf('``` `r %s` ```', code)
+}
+library(pander)
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("missing","")
+pander(head(d),caption = "First Six Rows of Data")
+```
+
+
+```{r MakeData, eval=FALSE, include=FALSE}
+library(readr)
+set.seed(4)
+mu <- c(16,15,11)
+sigma <- c(3.5,2,3)
+n <- c(80,30,30)
+lvls <- c("Control", "Low Dose", "High Dose")
+
+d <- NULL
+for (i in 1:length(mu)) {
+  d <- rbind(d,data.frame(Treatment = rep(i,n[i]), Depression = rnorm(n[i],mu[i],sigma[i])))
+}
+
+d <- d[sample(1:nrow(d),nrow(d)),]
+
+write_csv(x = d,path = "anova.csv")
+
+b <- matrix(c(1,-1,0.5))
+
+n <- 100
+X <- matrix(rbinom(2 * n, 1, 0.5), ncol = 2)
+colnames(X) <- c("A","B")
+AB <- X[,1] * X[,2]
+DV <- cbind(X,AB) %*% b + rnorm(n)
+d2 <- data.frame(X,DV)
+d2 <- d2 %>% mutate(A = factor(A, labels = c("A1", "A2")),
+                   B = factor(B, labels = c("B1", "B2")))
+write_csv(d2, "anova2.csv")
+
+```
+
+```{r ReadData}
+library(readr)
+d <- read_csv("http://my.ilstu.edu/~wjschne/444/anova.csv") %>% mutate(Treatment = factor(Treatment, labels = c("Control", "Low Dose", "High Dose")))
+library(pander)
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("missing","")
+pander(head(d),caption = "First Six Rows of Data")
+
+
+```
+
+# Descriptives
+
+The `broom` package has three main functions:
+* `tidy` allows us to quickly clean up output and put it into a data frame.
+* `glance` puts model summary statistics into a data frame.
+* `augment` generates data frames from a model and adds predicted values and standard errors.
+
+These functions make graphing, tables, and *output-as-input* analyses very easy.
+
+## Descriptives by Group
+
+```{r DescriptivesByGroup}
+d %>%
+  group_by(Treatment) %>%
+  summarize(N = length(Depression),
+            Mean = mean(Depression),
+            SD = sd(Depression)) %>%
+  pander()
+
+
+```
+
+Using the `psych` package
+
+```{r}
+library(psych)
+describeBy(d,group = "Treatment",mat = T) %>% pander()
+```
+
+
+Using the `tables` package
+
+```{r}
+library(tables)
+tabular(Treatment ~  Depression * (mean + sd), data = d) %>%
+  pander("Descriptives for Depression")
+```
+
+Make it pretty:
+
+```{r}
+tabular(Treatment ~ (`*N*` = 1) +  Heading() * Depression * 
+          (Heading(`*Mean*`)* mean + (`*SD*` = sd)), data = d) %>%
+  pander("Descriptives for Depression")
+```
+
+
+
+# One-Way ANOVA {.SectionSlide}
+
+# Method 1: `aov`
+
+This output is fine.
+
+```{r}
+m1 <- aov(Depression ~ Treatment, data = d)
+pander(m1)
+```
+
+Getting it just right is harder:
+
+```{r}
+APAaov <- function(m,partial_etasq = TRUE, eta = FALSE, ...){
+  require(broom) # For tidying results
+  require(lsr) # For effect sizes
+  require(pander) # For table output
+  require(dplyr) # For aggregating data
+  # Tidy model
+  tm <- tidy(m)
+  # Create totals
+  tr <- tm %>% 
+    select(df:sumsq) %>% 
+    summarize(df = sum(df), sumsq = sum(sumsq)) %>% 
+    mutate(statistic = NA, p.value = NA,term = "Total", meansq = sumsq/df)
+  tm <- rbind(tm,tr)
+  # Calculate and format effect sizes
+  es <- etaSquared(m)
+  es <- as.data.frame(es)  %>%  mutate(term = rownames(es))
+  tm <- tm %>% left_join(es, "term")
+  # Format table
+  ftm <- tm %>% select(-term,-df) %>% apply(FUN = formatC, MARGIN = 2, digits = 2, format = "f")
+  ftm[ftm == " NA"] <- ""
+  ftm <- tm %>% select(df) %>% cbind(ftm)
+  # Table headers
+  rownames(ftm) <-  tm$term 
+  rownames(ftm)[nrow(tm) - 1] <- "Error"
+  cnames <- c("df","SS","MS","F","p")
+  if (eta) cnames[length(cnames) + 1] <- "\\eta^2" 
+  else ftm <- ftm %>% select(-eta.sq)
+  if (partial_etasq) cnames[length(cnames) + 1] <- "\\eta_p^2" 
+  else ftm <- ftm %>% select(-eta.sq.part)
+  colnames(ftm) <- paste0("$",cnames,"$")
+  # Output table
+  pander(ftm, 
+       missing = "", 
+       round = 2, 
+       keep.trailing.zeros = TRUE,
+       ...)
+}
+APAaov(m1)
+
+```
+
+`papaja`'s `apa_print` function
+
+```{r}
+papaja::apa_print(m1)$table %>% pander()
+```
+
+`papaja::apa_print(m1)$full$Treatment`
+
+`r papaja::apa_print(m1)$full$Treatment`
+
+# Method 2: `lm` (ANOVA as regression)
+
+```{r}
+m2 <- lm(Depression ~ Treatment, data = d)
+summary(m2)
+```
+
+```{r}
+pander(anova(m2))
+pander(m2)
+```
+
+
+## Nicer table
+```{r}
+
+sm2 <- tidy(m2) %>% select(-term)
+sm2 <- sm2 %>% mutate(p.value = formatC(p.value, 2, format = "f"))
+rownames(sm2) <- c("(Intercept)", "Low Dose", "High Dose")
+colnames(sm2) <- paste0("$",c("b","se", "t", "p"),"$")
+pander(sm2)
+# Summary statistics
+gm2 <- glance(m2)
+pander(gm2)
+gm2 <- apply(gm2, 1, formatC, digits = 2, format = "f") %>% t()
+colnames(gm2) <- paste0("$",c("R^2","\\mathrm{adj}R^2","\\sigma_e","F","p","df_m","\\mathrm{logLik}","AIC","BIC","\\mathrm{dev}","df_e"),"$")
+rownames(gm2) <- "Statistic"
+pander(t(gm2))
+
+
+```
+
+# Dummy Codes
+
+We can create them by hand:
+```{r}
+ddum <- d %>% mutate(dum1 = (Treatment == "Low Dose") * 1,
+                  dum2 = (Treatment == "High Dose") * 1)
+ddum %>% 
+  head() %>% 
+  pander()
+```
+
+Use the `model.matrix` function to create dummy variables. The `Intercept` column of ones is also created but it is not a dummy variable. 
+
+```{r}
+model.matrix(~Treatment,data = d) %>% 
+  head() %>% 
+  pander()
+```
+
+We can use the dummy package:
+
+```{r}
+library(dummy)
+dums <- dummy(d)
+dums %>% 
+  head() %>% 
+  pander()
+```
+
+# Contrasts
+
+```{r}
+lm(Depression ~ C(Treatment,contr.helmert), data = d) %>% summary()
+lm(Depression ~ C(Treatment,contr.poly), data = d) %>% summary()
+lm(Depression ~ C(Treatment,contr.sum), data = d) %>% summary()
+lm(Depression ~ C(Treatment,contr.treatment), data = d) %>% summary()
+lm(Depression ~ C(Treatment,contr.SAS), data = d) %>% summary()
+```
+
+# Homogeneity of Variance
+
+```{r}
+with(d, sjmisc::levene_test(Depression, Treatment))
+
+plot(m2, 
+     which = 1, 
+     col = alpha("royalblue", 0.3),
+     pch = 16, 
+     cex = 0.5)
+
+library(ggplot2)
+# Set ggplot theme
+themeMod <- theme_grey() + 
+  theme(text = element_text(family = "serif", size = 16),
+        legend.position = "none",
+        axis.title.x = element_text(vjust = -0.75),
+        axis.title.y = element_text(vjust = 1.75),
+        plot.margin = unit(c(0.5, 0.5, 0.75, 0.75), "cm"))
+theme_set(themeMod)
+# Custom colors
+myFill <- function(...){
+  scale_fill_manual(values = alpha(c("royalblue", "firebrick", "darkorchid"),0.5),...)
+}
+scale_fill_discrete <- myFill
+
+ggplot(d, aes(Depression, fill = Treatment)) + geom_density()
+
+```
+
+```{r, fig.height = 7, echo = -1}
+par(col = alpha("royalblue", 0.3), pch = 16, bty = "n")
+par(mfcol = c(2,2))
+plot(m1)
+```
+
+## Bartlett Test of Homogeneity of Variances
+
+```{r}
+bartlett.test(Depression ~ Treatment, data = d)
+```
+
+## Figner-Killeen Test of Homogeneity of Variances
+
+```{r}
+fligner.test(Depression ~ Treatment, data = d) 
+```
+
+# Normality Assumption
+
+The residuals need to be normally distributed.
+
+## Shapiro-Wilk Normality Test
+
+```{r}
+shapiro.test(m1$residuals)
+```
+
+## Anderson-Darling Normality Test
+
+```{r}
+# A-D test on Model 1 residuals 
+nortest::ad.test(m1$residuals)
+```
+
+[More on normality tests](https://rexplorations.wordpress.com/2015/08/11/normality-tests-in-r/)
+
+# Plot Means
+
+```{r, fig.cap="Post-Intervention Depression Disributions and Means with Error Bars"}
+ggplot(d, aes(x = Treatment, y = Depression, fill = Treatment)) + 
+  geom_violin(color = NA) +
+  stat_summary(fun.data = "mean_cl_normal", geom = "errorbar", width = 0.1) +
+  stat_summary(fun.y = "mean", geom = "point", size = 4) 
+
+
+```
+
+# Post-hoc Comparisons
+
+```{r}
+TukeyHSD(m1)
+plot(TukeyHSD(m1, conf.level = 0.95))
+DescTools::ScheffeTest(m1)
+```
+
+# Two-Way ANOVA {.SectionSlide}
+
+# Load data
+
+```{r}
+d2 <- read.csv("http://my.ilstu.edu/~wjschne/444/anova2.csv")
+head(d2) %>% pander()
+```
+
+# Describe Data
+
+## Overall stats
+```{r}
+tidy(d2 %>% select(DV)) %>% pander()
+```
+
+## Grouped stats
+
+`dplyr` functions can create our data easily but the formatting won't be exactly right.
+
+```{r}
+d2 %>% 
+  group_by(A,B) %>% 
+  summarise(N = length(DV),
+            Mean = mean(DV),
+            SD = sd(DV)) %>% 
+  pander()
+```
+
+The `tables` package is extremely flexible. The formula means:
+
+`Rows ~ Columns`
+
+`A * B` means create all combinations of `A` and `B`.
+
+`mean + sd` means create two columns for means and standard deviations.
+
+```{r}
+library(tables)
+tabular(A * B ~  DV * (mean + sd), 
+        data = d2) %>% 
+  pander()
+```
+
+```{r}
+tabular(DV * (mean + sd) ~ (A * B), 
+        data = d2) %>% 
+  pander()
+
+tabular(Heading() * A ~  
+          Heading() * B * Heading() * DV * (mean + sd), 
+        data = d2) %>% 
+  pander()
+```
+
+
+Let's format the table to make it just right.
+
+```{r}
+
+fmt <- function(x) htmlNumeric(formatC(x, 
+                                       digits = 2, 
+                                       format = "f"), 
+                               leftpad = FALSE)
+stderr <- function(x) sd(x)/sqrt(length(x))
+
+fmtLatex <- function(x) paste0("$", x, "$")
+
+
+tabular((Factor(A, levelnames = c("A~1~","A~2~")) + 1) *
+        (Factor(B, levelnames = c("B~1~","B~2~")) + 1) ~ 
+        (`*n*` = 1) + 
+        Heading() * DV * ((`*M*` = mean) + 
+                          (`*SD*` = sd) + 
+                          (`*SE*` = stderr)) * 
+        Format(fmt()), 
+        data = d2) %>% 
+  pander()
+```
+
+# Factorial ANOVA
+
+```{r}
+mFact <- lm(DV ~ A * B, data = d2)
+pander(anova(mFact))
+pander(mFact)
+
+```
+
+# Plot Means
+
+```{r}
+pTW <- ggplot(d2, aes(x = A, y = DV, fill = A)) 
+
+pTW + 
+  geom_violin(color = NA) + 
+  stat_summary(fun.data = "mean_cl_normal") + 
+  facet_grid(. ~ B)
+
+TukeyHSD(aov(mFact))
+par(mar = c(5,7,3,1))
+plot(TukeyHSD(aov(mFact)),las = 1)
+```
+
+# Repeated-Measures ANOVA {.SectionSlide}
+
+# Load Data
+
+```{r}
+d3 <- haven::read_spss("http://my.ilstu.edu/~wjschne/138/TherapyOutcome.sav")
+d3 %>% head() %>% pander()
+# Rename variables to make them easier to restructure
+# Also mutate Therapy and PersonID into factors so that ggplot knows what to do with them.
+d3 <- d3 %>% 
+  rename(Therapy = TherapyType,
+         Aggression_1 = aggression1,
+         Aggression_2 = aggression2,
+         Empathy_1 = empathy1,
+         Empathy_2 = empathy2) %>% 
+  mutate(Therapy = as_factor(Therapy),
+         PersonID = factor(PersonID))
+
+d3 %>% head() %>% pander()
+```
+
+# Scatter Plots
+
+```{r}
+plot(d3 %>% select(Aggression_1:Empathy_2))
+```
+
+# Restructure Data into a Tidy Data Frame
+
+First, we will do this in steps. However, at the end, we will re-do it all in one step.
+
+```{r, warning=FALSE}
+library(tidyr)
+# Put variable names into a column called VariablesTime
+d3r <- d3 %>% gather("VariablesTime", "Values", Aggression_1:Empathy_2)
+d3r
+
+# Separate VariablesTime into Variables and Time
+d3r <- d3r %>% separate(VariablesTime, c("Variables","Time")) 
+d3r
+
+# Make Time a factor
+d3r <- d3r %>% mutate(Time = as_factor(Time))
+d3r
+
+# Spread Variables into Aggression and Empathy columns
+d3r <- d3r %>% spread(Variables, Values) 
+d3r
+
+# Do all these changes in one step
+d3r <- d3 %>% 
+  gather("VariablesTime", "Values", Aggression_1:Empathy_2) %>%
+  separate(VariablesTime, c("Variables","Time")) %>% 
+  mutate(Time = as_factor(Time)) %>% 
+  spread(Variables, Values)
+d3r
+```
+
+# Descriptives
+
+```{r, results='asis'}
+library(tables)
+tabular((Therapy + 1) * (Time + 1) ~ 
+          (N = 1) + 
+          (Aggression + Empathy) * (mean + sd), 
+        data = d3r) %>% pander()
+```
+
+# Plot Distributions
+
+## Aggression
+
+```{r}
+ggplot(d3r, aes(Time, Aggression)) +
+  geom_violin() + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) + 
+  stat_summary(fun.y = "mean", geom = "point") + 
+  stat_summary(fun.data = "mean_cl_normal", geom = "errorbar", width = 0.1) + 
+  facet_grid(. ~ Therapy, labeller = label_both)
+```
+
+## Empathy
+
+```{r}
+ggplot(d3r, aes(Time, Empathy)) +
+  geom_violin() + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) + 
+  stat_summary(fun.y = "mean", geom = "point") + 
+  stat_summary(fun.data = "mean_cl_normal", geom = "errorbar", width = 0.1) + 
+  facet_grid(. ~ Therapy, labeller = label_both)
+```
+
+# Analyses
+
+Make sure that `PersonID` is a factor.
+
+```{r}
+# These options make sure that the results are the same as that of SPSS
+options(contrasts = c("contr.sum","contr.poly"))
+
+
+m3a <- aov(Aggression ~ Therapy * Time + Error(PersonID/Time), data = d3r)
+m3a %>% tidy() %>% pander()
+d3 <- d3 %>% mutate(dAgg = Aggression_2 - Aggression_1)
+aov(dAgg ~ Therapy, d3) %>% summary
+m3e <- aov(Empathy ~ Therapy * Time + Error(PersonID/Time), data = d3r)
+```
+
+# Repeated-Measures ANOVA as Regression (with Random Intercepts)
+
+```{r}
+# lme4 does multilevel modeling
+library(lme4)
+# lmerTest makes lme4 give p-values
+library(lmerTest)
+# (1 | PersonID) means that each unique PersonID gets its own intercept
+m3a2 <- lmer(Aggression ~ Time * Therapy + (1 | PersonID), data = d3r) 
+summary(m3a2)
+anova(m3a2)
+
+plot(m3a2)
+qqmath(m3a2, id = 0.05)
+# Make a data frame with fitted values from model
+am2a2 <- augment(m3a2)
+
+ggplot(am2a2, aes(Time, Aggression, color = PersonID, group = PersonID)) + geom_line()
+
+ggplot(am2a2, aes(Time, Aggression)) +
+  geom_line(aes(group = PersonID, color = PersonID)) +
+  facet_grid(~Therapy)
+
+ggplot(am2a2, aes(Time, .fitted)) + geom_line(aes(group = PersonID, color = PersonID), alpha = 0.5) + facet_grid(~Therapy)
+
+
+am2a2 <- am2a2 %>% mutate(Timej = as.numeric(Time) + rnorm(nrow(am2a2), mean = 0, sd = 0.02))
+glimpse(am2a2)
+ggplot(am2a2, aes(Time, Aggression))  + 
+  geom_violin(color = NA) + 
+  geom_segment(aes(x = Timej, 
+                   xend = Timej, 
+                   y = .fitted, 
+                   yend = Aggression, 
+                   group = PersonID, 
+                   color = PersonID), 
+               arrow = arrow(type = "closed", 
+                             length = unit(0.15,"cm")), 
+               alpha = 0.5) + 
+  geom_line(aes(x = Timej, 
+                y = .fitted, 
+                group = PersonID, 
+                color = PersonID), 
+            alpha = 0.5) + 
+  geom_line(aes(y = .fixed, group = 1),lwd =1) +
+  facet_grid(~Therapy)
+```
+
+
+

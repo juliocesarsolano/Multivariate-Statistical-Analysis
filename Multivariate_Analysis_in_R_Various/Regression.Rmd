@@ -1,0 +1,1356 @@
+---
+title: "Conducting and Reporting Regression Analyses in R"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    highlight: kate
+    widescreen: yes
+bibliography: Loaded.bib
+csl: apa.csl
+nocite: |
+  @shiny, @lavaan, @car, @gvlma, @stargazer, @shape, @mvtnorm, @reshape2, @haven, @scales, @pander, @broom, @dplyr, @knitr, @psych, @Hmisc, @ggplot2, @Formula, @survival, @lattice, @magrittr, @rockchalk, @QuantPsyc, @MASS, @boot, @rgl, @base, @rmarkdown
+---
+<meta name = "copyright" 
+content = "<a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+
+# Load Data
+
+```{r setup,echo = FALSE,message = FALSE}
+# Load packages
+library(QuantPsyc)
+library(rockchalk)
+library(magrittr)
+library(Hmisc)
+library(psych)
+library(ggplot2)
+library(GGally)
+library(knitr)
+library(dplyr)
+library(broom)
+library(pander)
+library(scales)
+library(haven)
+library(reshape2)
+library(mvtnorm)
+library(shape)
+library(stargazer)
+library(rgl)
+library(gvlma)
+library(car)
+library(mvtnorm)
+library(ggfortify)
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+
+rinline  <-  function(code) {
+  sprintf('``` `r %s` ```', code)
+}
+rgl::setupKnitr()
+library(pander)
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("missing","")
+# Set ggplot theme
+themeMod <- theme_grey() + 
+  theme(text = element_text(family = "serif"),
+        legend.position = "none",
+        axis.title.x = element_text(vjust = -0.75),
+        axis.title.y = element_text(vjust = 1.75),
+        plot.margin = unit(c(0.5, 0.5, 0.75, 0.75), "cm"))
+theme_set(themeMod)
+```
+
+```{r MakeData, eval=FALSE, include=FALSE}
+library(lavaan)
+set.seed(10)
+m <- "
+ColGPA~0.5*HSGPA + 0.3*ACT + 0.1*RecLetters
+HSGPA ~ 0.6 * ACT 
+RecLetters ~ 0.4 * HSGPA + 0.1 * ACT
+"
+d <- simulateData(m,sample.nobs = 1000,standardized = TRUE)
+d$ColGPA <- round(d$ColGPA * 0.8 + 2.6, 2)
+d$HSGPA <- round(d$HSGPA * 0.8 + 2.6, 2)
+d$ACT <- round(d$ACT * 6 + 18)
+d$ACT[d$ACT<1] <- 1
+d$ACT[d$ACT>36] <- 36
+d$ColGPA[d$ColGPA<0] <- 0
+d$ColGPA[d$ColGPA>4] <- 4
+d$HSGPA[d$HSGPA<0] <- 0
+d$HSGPA[d$HSGPA>4] <- 4
+d$RecLetters <- round(d$RecLetters * 2 + 5)
+d$RecLetters[d$RecLetters<1] <- 1
+d$RecLetters[d$RecLetters>10] <- 10
+readr::write_csv(d,"GPA.csv")
+
+```
+
+```{r LoadData}
+myBlue <- scales::alpha("royalblue", 0.3)
+myRed <- scales::alpha("firebrick", 0.3)
+options(digits = 2)
+library(pander)
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("missing","")
+
+d <- readr::read_csv("http://my.ilstu.edu/~wjschne/444/GPA.csv")
+
+cord <- cor(d)
+
+tableCor <- character(0)
+
+for (i in 1:ncol(cord)) {
+  for (j in 1:nrow(cord)) {
+    tableCor <- paste0(tableCor," & ", cord[j,i])
+  }
+  tableCor <- paste0(tableCor,"\\")
+}
+
+psych::describe(d,skew = F, ranges = F) %>% kable()
+
+```
+
+# Relationships
+
+![Variable Relationships](VariableRelationships.svg)
+
+# Correlation {.SectionSlide}
+
+# Correlation Tables
+
+[Primer on Correlations](http://my.ilstu.edu/~wjschne/138/Psychology138Lab8.html)
+
+```{r}
+vNames <- c("College GPA", 
+            "High School GPA", 
+            "Recommendations",
+            "ACT")
+dcor <- cor(d)
+pander(dcor)
+rownames(dcor) <- paste0(1:length(vNames),". ", vNames)
+colnames(dcor) <- 1:length(vNames)
+pander(dcor)
+dcor[upper.tri(dcor)] <- NA
+pander(dcor)
+```
+
+
+# Correlation Plots
+
+```{r, fig.height=7, fig.width=7}
+plot(d, 
+     col = myBlue,
+     pch = 16)
+
+library(mycor)
+plot(mycor(d),type = 2)
+library(GGally)
+ggpairs(d)
+psych::cor.plot(cor(d),
+                numbers = TRUE, 
+                cex = 2)
+library(corrplot)
+corrplot.mixed(cor(d),
+               lower = "ellipse", 
+               upper = "number")
+
+```
+
+# Correlation tests
+
+```{r}
+psych::corr.test(d)
+psych::corr.test(d)$ci %>% pander()
+```
+
+
+# Multivariate Tests of Correlation
+
+Is the correlation matrix an identity matrix?
+
+$$H_0: \boldsymbol{R}=\begin{matrix}
+1&0&0&0\\
+0&1&0&0\\
+0&0&1&0\\
+0&0&0&1
+\end{matrix}$$
+
+```{r}
+cortest(d)
+```
+
+
+# Regression {.SectionSlide}
+
+# Simple Regression
+
+[Primer on Regression](http://my.ilstu.edu/~wjschne/138/Psychology138Lab9.html)
+
+## Analysis
+
+$$Y_i = \underbrace{b_0 + b_1 X_i}_{\hat{Y}_i} + e_i$$
+
+$$\begin{align}e_i&\sim N(0,\sigma_e^2)\\
+Y_i&\sim N(\mu_Y,\sigma_Y^2)\\
+\hat{Y}_i&\sim N(\mu_Y,\sigma_\hat{Y}^2)
+\end{align}$$
+
+$$\begin{align}\sigma_Y^2 &=\sigma_\hat{Y}^2+\sigma_e^2\\
+R^2&=\frac{\sigma_\hat{Y}^2}{\sigma_Y^2}\end{align}$$
+
+```{r}
+m1 <- lm(ColGPA~HSGPA,d)
+m1 %>% tidy() %>% pander()
+m1 %>% glance() %>% pander()
+da <- m1 %>% augment()
+da %>% head() %>% pander()
+
+m1.slope <- coef(m1)[2]
+m1.intercept <- coef(m1)[1]
+m1.see <- glance(m1)$sigma
+
+ggplot(da, aes(HSGPA,ColGPA)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm",fullrange = TRUE) +
+  geom_abline(intercept = m1.intercept + m1.see * 1.96,
+              slope = m1.slope, 
+              linetype = 2) +
+  geom_abline(intercept = m1.intercept - m1.see * 1.96,
+              slope = m1.slope, 
+              linetype = 2) +
+  xlim(0,4) +
+  ylim(0,4) +
+  coord_equal() +
+  xlab("High School GPA") +
+  ylab("College GPA")
+```
+
+## Fitted Values
+
+```{r}
+ggplot(da, aes(HSGPA,.fitted)) +
+  geom_point(alpha = 0.4) +
+  xlim(0,4) +
+  ylim(0,4) +
+  coord_equal() +
+  xlab("High School GPA") +
+  ylab("Predicted College GPA")
+```
+
+## Residuals
+
+```{r}
+ggplot(da, aes(HSGPA,.resid)) +
+  geom_point(alpha = 0.4) +
+  xlim(0,4) +
+  coord_equal() +
+  xlab("High School GPA") +
+  ylab("College GPA (residuals)")
+```
+
+
+# Assumptions {.SectionSlide}
+
+# This plot is your friend.
+
+```{r, echo = -1}
+par(mfcol = c(2,2))
+m1 %>% plot()
+```
+
+A `ggplot2` version of this plot is in the `ggfortify` package. 
+
+```{r}
+library(ggfortify)
+m1 %>% autoplot
+m1 %>% autoplot(which = 1:6, 
+                ncol = 2, 
+                label.size = 3)
+```
+
+
+# Predictors are measured without error
+
+Almost never happens.
+
+## Attentuation of Validity
+
+$$\rho_{T_{x}T_{y}}=\rho_{xy}\sqrt{\rho_{xx}\rho_{yy}}$$
+
+If the correlation between two variables' true scores is 0.6 and the reliability coefficients of the variables are 0.8 and 0.7, what is the correlation between the observed scores? 
+
+```{r}
+rho_TXTY <- 0.6 # correlation of X and Y true scores
+rho_XX <- 0.8 # reliability of X
+rho_YY <- 0.7 # reliability of Y
+rho_XY <- rho_TXTY * sqrt(rho_XX * rho_YY) # correlation of X and Y
+```
+
+$\rho_{XY}=`r round(rho_XY, 2)`$
+
+```{r, echo=FALSE}
+n <- 100000
+g <- rnorm(n)
+Tx <- sqrt(rho_TXTY) * g + sqrt(1 - rho_TXTY) * rnorm(n)
+Ty <- sqrt(rho_TXTY) * g + sqrt(1 - rho_TXTY) * rnorm(n)
+X <- sqrt(rho_XX) * Tx + sqrt(1 - rho_XX) * rnorm(n)
+Y <- sqrt(rho_YY) * Ty + sqrt(1 - rho_YY) * rnorm(n)
+dav <- data.frame(Tx, Ty, X, Y)
+corrplot::corrplot.mixed(cor(dav),lower = "ellipse", upper = "number")
+```
+
+# Normality of Errors
+
+$$e_i\sim N(0,\sigma_e^2)$$
+
+Shapiro-Wilk Normality Test
+
+Not quite normal...
+
+```{r}
+shapiro.test(m1$residuals)
+car::qqPlot(m1)
+```
+
+Not at all normal!
+
+```{r}
+n <- 1000
+x <- rnorm(n)
+e <- rbinom(n, size = 5, prob = 0.5) + rnorm(n, 0, 0.15)
+y <- x + e
+mb <- lm(y~x)
+plot(x,y)
+shapiro.test(mb$residuals)
+par(mfcol = c(2,2))
+plot(mb)
+```
+
+```{r}
+car::qqPlot(mb)
+```
+
+# Independence of Errors
+
+## Autocorrelation
+
+```{r}
+set.seed(3)
+n <- 1000
+x <- rnorm(n)
+e <- rnorm(n) 
+
+lag_e <- lag(e)
+lag_e[1] <- e[n]
+y <- 0.4 * x + e + lag_e
+cor(x,y)
+ms <- lm(y ~ x)
+tidy(ms) %>% pander()
+qplot(x,y)
+par(mfcol = c(2,2))
+plot(ms)
+```
+
+Autocorrelation generally causes standard errors to be underestimated (leading to more Type I errors).
+
+The Durbin-Watson Test measures autocorrelations. A *D-W* statistic < 1 is often considered low enough to worry.
+
+```{r, message=FALSE, warning=FALSE}
+car::durbinWatsonTest(ms)
+ggplot(augment(ms), aes(.resid, lag(.resid))) +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_ellipse()
+```
+
+When auto-correlation is present, it can be accounted for using generalized least squares with an autocorrelation structure of order 1. 
+
+```{r}
+library(nlme)
+gls(y ~ x, correlation = corAR1(form = ~1)) %>% summary
+```
+
+# Independence of Errors
+
+## Nested Data
+
+Nested data are accounted for with multilevel modeling. The `nlme` and `lme4` packages are the primary tools for multilevel modeling in R.
+
+```{r}
+set.seed(16)
+id <- 1:100
+GroupID <- 1:10
+d1 <- expand.grid(id = id, GroupID = GroupID) %>% 
+  mutate(PersonID = factor(formatC(id + GroupID / 100, 2, format = "f")))
+GroupInterceptx <- rnorm(length(GroupID)) * 5
+GroupIntercepty <- rnorm(length(GroupID)) * 5
+g <- data.frame(GroupID,GroupInterceptx,GroupIntercepty)
+d1 <- d1 %>% left_join(g, by = "GroupID") %>% 
+  mutate(x = rnorm(nrow(d1)) + GroupInterceptx,
+         y = x + GroupIntercepty + 1 * rnorm(nrow(d1)),
+         GroupID = factor(GroupID))
+
+lm(y ~ x, d1) %>% summary
+ggplot(d1, aes(x, y)) + geom_point() +
+  geom_smooth(method = "lm") +
+  stat_ellipse()
+lme4::lmer(y ~ x + (1 | GroupID), d1) %>% summary
+ggplot(d1, aes(x, y, color = GroupID)) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  stat_ellipse()
+```
+
+# Homoscedasticity
+
+Heteroscedastic
+
+```{r}
+n <- 1000
+x <- sort(rnorm(n))
+e <- rnorm(n, 0, seq(0.1, 2, along.with = x))
+y <- x + e 
+mxy <- lm(y ~ x)
+dxy <- augment(mxy)
+ggplot(dxy, aes(x, y)) + 
+  geom_point() +
+  geom_smooth(method = "lm")
+ggplot(dxy, aes(x, y, color = .resid)) +
+  geom_point(size = 0.5) + 
+  geom_segment(aes(xend = x, 
+                   yend = y, 
+                   y = .fitted)) +
+  scale_color_gradient2(low = muted("blue"), 
+                        mid = "white", 
+                        high = muted("red"), 
+                        guide = "none", 
+                        space = "Lab")
+
+par(mfcol = c(2,2))
+plot(mxy)
+```
+
+```{r}
+library(car)
+ncvTest(mxy)
+spreadLevelPlot(mxy)
+```
+
+# Global Validation of Linear Models Assumptions
+
+```{r, fig.height=10}
+library(gvlma)
+mxy %>% gvlma %>% summary
+mxy %>% gvlma %>% plot
+
+```
+
+
+
+
+
+# Plot with standard errors
+
+```{r, fig.width=6, fig.height=6,dev='svg'}
+b <- coef(m1) %>% round(2)
+reg_eq <- bquote(italic(hat(Y)) == .(b[1]) +  .(b[2]) * italic(X)) %>% as.expression() %>%  as.character()
+ggplot(d, aes(HSGPA, ColGPA)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = lm) +
+  geom_text(x = 3.5, y = 0.25, label = reg_eq, parse = TRUE) +
+  xlim(0,4) +
+  ylim(0,4) +
+  coord_equal() +
+  xlab("High School GPA") +
+  ylab("College GPA")
+```
+
+# Predicted Values
+
+```{r, dev='svg'}
+# Standard way
+predict(m1) %>% head()
+
+# Easy way
+da <- broom::augment(m1)
+head(da) %>% pander()
+
+
+
+# Predict new values
+
+predict(m1,newdata = data.frame(HSGPA = c(1,4)))
+
+residcolor <- ifelse(da$.resid < 0,
+                     "royalblue",
+                     "firebrick") %>%
+  scales::alpha(0.5)
+
+ggplot(da,aes(HSGPA, ColGPA)) +
+  geom_segment(aes(x = HSGPA, 
+                   xend = HSGPA, 
+                   y = .fitted, 
+                   yend = ColGPA), 
+               alpha = 0.2,
+               arrow = arrow(length = unit(0.1,"cm")),
+               color = residcolor) +
+  geom_smooth(method = lm) +
+  geom_text(x = 3.5, y = 0.25, label = reg_eq, parse = TRUE) +
+  xlim(0,4) +
+  ylim(0,4) +
+  coord_equal() +
+  xlab("High School GPA") +
+  ylab("College GPA")
+```
+
+# Multiple Regression {.SectionSlide}
+
+# Multiple Regression
+
+$$Y_i = b_0 + b_1 X_1 + b_2 X_2 + ... + b_k X_k + e_i$$
+
+```{r}
+m2 <- lm(ColGPA ~ HSGPA + ACT, d)
+m2 %>% pander()
+semPlot::semPaths(m2)
+semPlot::semPaths(m2,what = "par")
+semPlot::semPaths(m2,what = "std")
+str(m2)
+broom::glance(m2) %>% pander()
+confint(m2) %>% pander()
+anova(m1, m2) %>% pander()
+m2stats <- papaja::apa_print(m2)
+m2stats$table %>% pander()
+
+```
+
+`r rinline("m2stats$full$HSGPA")`
+
+`r m2stats$full$HSGPA`
+
+`r rinline("m2stats$full$modelfit$r2")`
+
+`r m2stats$full$modelfit$r2`
+
+# Plot Multiple Regression
+
+```{r, webgl = TRUE}
+
+rain <- rainbow(nrow(d))
+plot3d(d %>% select(HSGPA,ACT,ColGPA), col = rain[rank(m2$resid)],type = "s",size = 0.5,box = F,axes = F,xlab = "",ylab = "",zlab = "")
+
+coefs <- coef(m2)            
+planes3d(a = coefs["HSGPA"], b = coefs["ACT"],-1,  coefs["(Intercept)"], alpha = 0.50, col = "plum2")
+axis3d('x',pos = c(NA, 0, 0), at = seq(0,4))
+axis3d('y',pos = c(0, NA, 0), at = seq(0,36,6))
+axis3d('z',pos = c(0, 0, NA), at = seq(0,4))
+mtext3d(text = 'High School GPA',edge = "x",col = "red")
+mtext3d(text = 'ACT', edge = "y",col = "red")
+mtext3d(text = 'College GPA',edge = "z",col = "red")
+```
+
+# Standardized Regression Coefficients
+
+Unstandardized regression coefficients are sometimes hard to interpret because their meaning depends on the standard deviations of the predictors and of the response variable.
+
+Standardized coefficients are the resulting coefficients if all of the variables involved in the model are converted to *z*-scores. The `scale` function, by default, standardizes variables (i.e., converts them to *z*-scores).
+
+```{r}
+lm(scale(ColGPA) ~ scale(HSGPA) + scale(ACT), d) %>% 
+  tidy %>% pander
+library(QuantPsyc)
+lm.beta(m2) %>% pander
+```
+
+# Comparing Models
+
+```{r}
+anova(m1, m2) %>% pander
+```
+
+```{r}
+car::compareCoefs(m1,m2, print = F) %>% pander()
+```
+
+```{r, results='asis'}
+library(stargazer)
+stargazer(m1,m2,type = "html")
+```
+
+The squared semi-partial correlation between *x* and *y*, controlling for *z* is the proportion of variance in *y* that is not explained by *z*. In other words, it is the $\Delta R^2$ when model 1 is `y ~ z` and model 2 is `y ~ z + x`.
+
+```{r}
+library(rockchalk)
+getDeltaRsquare(m2) 
+```
+
+If the *F* test from the `anova` comparison function is significant, then $\Delta R^2 > 0$
+
+# No or Little Multicollinearity
+
+```{r}
+x1 <- rnorm(n)
+e <- rnorm(n)
+y <- x1 + e
+mc1 <- lm(y ~ x1)
+summary(mc1)
+```
+
+Perfect collinearity
+
+```{r}
+x2 <- x1
+mc2 <- lm(y ~ x1 + x2) 
+summary(mc2)
+```
+
+Near perfect collinearity
+
+```{r}
+x2 <- x1 + 0.00001 * rnorm(n)
+mc3 <- lm(y ~ x1 + x2) 
+summary(mc3)
+```
+
+```{r}
+anova(mc1, mc2, mc3)
+```
+
+```{r}
+library(magrittr)
+rbind(glance(mc1), 
+      glance(mc2), 
+      glance(mc3)) %>% 
+  set_rownames(paste0("Model ", 1:3)) %>% 
+  pander()
+```
+
+Note that $R^2$ is (nearly) the same in all three models.
+
+## Variance Inflation Factors
+
+$$VIF=\frac{1}{1-R_j^2}$$
+
+$R_j^2$ is the variance explained in predictor $j$ by all the other predictors.
+
+$$\sigma_{b_j}^2= \frac{1}{1-R_j^2}\frac{\sigma_e^2}{n\sigma_{x_j}}$$
+
+*Tolerance* is the reciprocal of VIF
+
+$$Tolerance = \frac{1}{VIF}=1-R_j^2$$
+
+Rule of thumb: VIF &gt; 10 (Tolerance &lt; 0.1) is worrisome.
+
+```{r}
+vif(mc3)
+vcov(mc3) %>% pander()
+mc3 %>% vcov %>% cov2cor %>% pander
+confidenceEllipse(mc3)
+m2 %>% vcov %>% cov2cor %>% pander
+confidenceEllipse(m2,which.coef = c(1,2), fill = T)
+confidenceEllipse(m2,which.coef = c(1,3), fill = T)
+confidenceEllipse(m2,which.coef = c(2,3), fill = T)
+```
+
+```{r, webgl = T}
+plot3d( ellipse3d(m2), col = "royalblue", alpha = 0.1, aspect = T, box = F,axes = F,xlab = "",ylab = "",zlab = "", xlim = c(0, 0.8), ylim = c(0,0.6), zlim = c(0,0.05))
+axis3d('x',pos = c(NA, 0, 0), at = seq(0.0,0.8,0.1))
+axis3d('y',pos = c(0, NA, 0), at = seq(0,0.6,0.1))
+axis3d('z',pos = c(0, 0, NA), at = seq(0,0.050, 0.01))
+mtext3d(text = 'Intercept',edge = "x",col = "red")
+mtext3d(text = 'HS GPA',edge = "y", col = "red")
+mtext3d(text = 'ACT',edge = "z", col = "red")
+
+```
+
+# Univariate Outliers
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+x <- rnorm(100)
+x[101] <- 8
+p <- ggplot(data.frame(x), aes(x)) 
+p + geom_density(fill = "royalblue", alpha = 0.5)
+
+```
+
+# Multivariate Outliers
+
+A multivariate outlier need not be a univariate outlier. It might be just an unusual combination of otherwise ordinary values.
+
+```{r, warning=FALSE}
+set.seed(5)
+mo <- rmvnorm(n = 10000, sigma = matrix(c(1,0.8,0.8,1),2))
+mo[100,] <- c(-2,2)
+mo <- data.frame(mo)
+colnames(mo) <- c("x","y")
+ggplot(mo, aes(x, y)) + geom_point(alpha = 0.1, size = 1) + geom_point(data = mo[100,],color = "red") + coord_equal() + xlim(-4,4) + ylim(-4,4)
+
+```
+
+There are many ways measure the degree to which an observation is a multivariate outlier.
+
+The *Mahalanobis Distance* is perhaps the most straightforward way to detect a multivariate outlier.
+
+```{r, eval=FALSE, include=FALSE}
+set.seed(1)
+library(shape)
+n <- 1000
+ri <- 0.8
+x <- rnorm(n)
+y <- rnorm(n)
+r <- 0.8
+R <- matrix(c(1,r,r,1),2)
+xy0 <- rmvnorm(n, sigma = R)
+xy0[n,] <- c(-1.5,1.5)
+cnt <- 10000
+for (ri in c(rep(0,40), seq(0,r,0.02), rep(r,40), seq(r,0,-0.02))) {
+  cnt <- cnt + 1
+xy <- xy0 %*% solve(chol(matrix(c(1,ri,ri,1),2)))
+cor(xy)
+theta <- acos(ri)
+rottheta <- pi/2 - theta 
+RotationMatrix <- matrix(c(cos(rottheta), sin(rottheta), -sin(rottheta), cos(rottheta)), nrow = 2)
+Cairo::CairoPNG(paste0("Plot/Maha",cnt,".png"))
+par(pty = "s", pch = 16, mar = c(0,0,0,0))
+plot(xy, xlim = c(-5,5), ylim = c(-5,5), ann = F, axes = F, col = alpha("royalblue",0.5))
+yaxis <- matrix(c(0,0,5,-5),2) %*% RotationMatrix
+Arrows(x0 = yaxis[1,1], y0 = yaxis[1,2], x1 = yaxis[2,1], y1 = yaxis[2,2], code = 3, arr.adj = 1)
+Arrows(x0 = -5, y0 = 0, x1 = 5, y1 = 0, code = 3, arr.adj = 1)
+points(xy[n,1],xy[n,2],col = "firebrick")
+ for (rad in 1:5) car::ellipse(center = c(0,0), shape = cor(xy), radius = rad,center.pch = NULL,col = "black", lwd = 1)
+if (ri == r) {
+  Arrows(0,0,xy[n,1],xy[n,2],col = "firebrick",arr.adj = 1, code = 3)
+  text(xy[n,1] * 0.5, xy[n,2] * 0.5,labels = round(sqrt(sum(xy[n,] ^ 2)),2), srt = atan(xy[n,2]/xy[n,1]) * 180 / pi, col = "firebrick", adj = c(0.5,-0.5))
+}
+dev.off()
+}
+
+ani.options(ani.width = 500, ani.height = 500, interval = 1/50, ani.dev = "png", ani.type = "png") #Animation options
+im.convert("Plot/Maha*.png", output = "Mahalanobis.gif", extra.opts = "", clean = T) #Make animated .gif
+```
+
+$$d_i = \sqrt{\boldsymbol{(X_i-\bar{X})'S^{-1}(X_i-\bar{X})}}$$
+
+$d_i$ is the Mahalanobis distance for case $i$.
+
+$\boldsymbol{X_i}$ is the vector of observations for case $i$.
+
+$\boldsymbol{\bar{X}}$ is the vector of means for all the variables in $\boldsymbol{X}$.
+
+$\boldsymbol{S}$ is the covariance matrix of $\boldsymbol{X}$.
+
+If $\boldsymbol{X} is multivariate normal, with $k$ variables, $d_i^2 \sim \chi^2(k)$.
+
+```{r}
+# More convenient mahalanobis distance function than the base are function mahalanobis
+library(assertr)
+maha <- d %>% 
+  select(ColGPA, HSGPA, ACT) %>% 
+  as.data.frame() %>% 
+  maha_dist()
+md <- data_frame(`Mahalanobis Distance` = maha)
+glimpse(md)
+ggplot(md,aes(x = `Mahalanobis Distance`)) + geom_density(fill = "blue", color = NA, alpha = 0.5) + geom_vline(xintercept = qchisq(p = 1 - 0.05/nrow(d) ,df = 3) , color = "red") + stat_function(fun = dchisq, colour = "red", arg = list(df = 3))
+```
+
+
+
+# Leverage
+
+Outliers in the predictor space have leverage (the ability to influence coefficients). Leverage has nothing to with the $y$-value or with the residual. Points with high leverage may or may not influence the parameter estimates.
+
+```{r leverage, include=FALSE, eval=FALSE}
+library(manipulate)
+manipulate({
+set.seed(2)
+n <- 29
+d <- mvtnorm::rmvnorm(n, sigma = matrix(c(1,0.8,0.8,1),2)) %>% data.frame
+colnames(d) <- c("x", "y")
+pColor <- c(rep("black",n), "red")
+dxy <- data.frame(x = x, y = y)
+d1 <- rbind(d,dxy)
+ggplot(d, aes(x, y)) + geom_point() + xlim(-4,4) + ylim(-4,4) + geom_smooth(method = "lm") + stat_ellipse() + geom_point(data = dxy,color = "red") + geom_smooth(data = d1, method = "lm", color = "red", se = F)}, x = slider(-4,4,0, step = 0.1), y = slider(-4,4,0, step = 0.1)
+)
+```
+
+```{r, include=FALSE, eval=FALSE}
+library(ggplot2)
+library(dplyr)
+library(Cairo)
+set.seed(2)
+n <- 29
+d <- mvtnorm::rmvnorm(n, sigma = matrix(c(1,0.8,0.8,1),2)) %>% data.frame
+colnames(d) <- c("x", "y")
+pColor <- c(rep("black",n), "red")
+# time <- seq(-3.93,3.93, 0.01)
+interval <- 1
+ytime4 <- 4 * sin(seq(-1*pi/2,3*pi/2,length.out = 51))
+npause = 5
+ndist = 10
+ytime0 <- 4 * sin(seq(pi,-1*pi,length.out = 51)) 
+xtime <- c(rep(-4,npause),
+           rep(-4,length(ytime4)), 
+           rep(-4,npause), 
+           seq(-4,0,length.out = ndist),
+           rep(0,npause),
+           rep(0,length(ytime0)),
+           rep(0,npause),
+           seq(0,4,length.out = ndist),
+           rep(4,npause),
+           rep(4,length(ytime4)),
+           rep(4,npause),
+           seq(4,-4, length.out = ndist))
+
+ytime <- c(rep(-4,npause),
+           ytime4, 
+           rep(-4,npause), 
+           seq(-4,0,length.out = ndist),
+           rep(0,npause),
+           ytime0,
+           rep(0,npause),
+           seq(0,4,length.out = ndist),
+           rep(4,npause),
+           ytime4 * -1,
+           rep(4,npause),
+           seq(4,-4, length.out = ndist))
+for (i in 1:length(ytime)) {
+  # x1 <- time[i]
+  # y1 <- sin(x1 * 6) * 4
+  x1 <- xtime[i]
+  y1 <- ytime[i]
+  dxy <- data.frame(x = x1, y = y1)
+  d1 <- rbind(d,dxy)
+
+  p <- ggplot(d, aes(x, y)) + 
+    geom_point() + 
+    xlim(-4,4) + 
+    ylim(-4,4) + 
+    geom_smooth(method = "lm") + 
+    stat_ellipse() + 
+    geom_point(data = dxy,color = "red") + 
+    geom_smooth(data = d1, 
+                method = "lm", 
+                color = "red", 
+                se = F) + 
+    coord_equal()
+
+# Cairo::CairoPNG(paste0("Plot/leverage",i + 10000,".png"), bg = "white")
+# p
+# dev.off()
+# png(file = paste0("Plot/R",10000 + i,".png"),bg="white",antialias = "default", width = 800, height = 800, family = "serif")
+# p
+# dev.off()
+  
+  ggsave(paste0("Plot/R",10000 + i,".png"),plot = p, device = CairoPNG, width = 600,height = 600, limitsize = F)
+  }
+
+library(animation)
+ani.options(ani.width = 600, ani.height = 600,interval = 0.05, ani.dev = "png", ani.type = "png")
+
+im.convert("Plot/R*.png", output = "temp.gif", clean = TRUE)
+
+# shell("convert  temp.gif -coalesce -duplicate 1,-2-1 -layers OptimizeFrame -loop 0 Leverage.gif")
+
+```
+
+![](Leverage.gif)
+
+# Leverage Plots
+
+```{r}
+car::leveragePlots(m2)
+```
+
+Leverage is measured with *hat values*. 
+
+$$\begin{align}\boldsymbol{\hat{Y}} &= \boldsymbol{X}\underbrace{(\boldsymbol{X}'\boldsymbol{X})^{-1}\boldsymbol{X}' \boldsymbol{Y}}_{\boldsymbol{\beta} = \text{Coefficients}}\\
+&= \boldsymbol{X} \boldsymbol{\beta}\\
+\boldsymbol{\hat{Y}} &= \underbrace{\boldsymbol{X}(\boldsymbol{X}'\boldsymbol{X})^{-1}\boldsymbol{X}' }_{\boldsymbol{H} = \text{Hat Matrix}} \boldsymbol{Y}\\
+&= \boldsymbol{HY}\end{align}$$
+
+$\mathtt{diag}(\boldsymbol{H}) =$ Hat Values
+
+Hat values indicate how much each case's predictor values potentially contribute to the all the values in \boldsymbol{\hat{Y}}
+
+```{r}
+hatvalues(m2) %>% head
+```
+
+# Influence Plots
+
+Influence is measured with *Cook's D*.
+
+In the plot below, the size of the circle indicates large *Cook's D*.
+
+```{r}
+car::influencePlot(m2)
+car::infIndexPlot(m2)
+mcPlots(m2)
+```
+
+Conceptually:
+
+Influence = Leverage $\times$ Discrepancy
+
+Influence = Hat-values $\times$ Studentized Residual
+
+# Studentized Residuals
+
+*Masking* refers to the fact that an outlier can have a smaller residual because the outlier pulled the regression line toward it.
+
+*Studentized residuals* are residuals based on the model that would result if that point were excluded.
+
+Although we think of residuals as being independent and normally distributed, the $n$ estimated residuals have $n-k$ degrees of freedom and thus cannot be truly indpenedent. The covariance matrix of $e$ is
+
+$$\boldsymbol{\Sigma}_e = \hat{\sigma}_e^2(\boldsymbol{I-H})$$
+
+For the $i$th residual,
+
+$$s_{e_i}^2 = \hat{\sigma}_e^2 (1 - h_{ii})$$
+
+To standardize the residual,
+
+$$\frac{e_i}{\hat{\sigma}_e^2 \sqrt{1 - h_{ii}}}$$
+
+The studentized residual is a better outlier detector than the standardized residual because the outlier itself is not included in the calculation of the standard error of the estimate.
+
+$$\frac{e_i}{\hat{\sigma}_{(-i)}^2 \sqrt{1 - h_{ii}}}$$
+
+The studentized residual follows a *t* distribution with $n-k-1$ degrees of freedom.
+
+```{r, echo=FALSE}
+set.seed(4)
+d_out <- rmvnorm(30,sigma = matrix(c(1,0.95,0.95,1), 2)) %>% data.frame()
+colnames(d_out) <- c("x","y")
+d_red <- data.frame(x = -2, y = 2.5)
+m_out <- lm(y ~ x, d_out)
+m_red <- lm(y ~ x, rbind(d_out,d_red))
+
+p <- ggplot(d_out, aes(x,y)) 
+p + geom_point(color = "royalblue", alpha = 0.5) + geom_smooth(method = "lm", fullrange = TRUE, se = F) + geom_point(data = d_red, color = "red") + geom_smooth(method = "lm", data = rbind(d_out, d_red), color = "red", se = F) + geom_segment(data = data.frame(xend = d_red[1,1], yend = d_red[1,2], x = d_red$x, y = predict(m_out,newdata = d_red)), aes(xend = xend, yend = yend), arrow = arrow(length = unit(0.2,"cm")), color = "royalblue") + stat_ellipse(color = "royalblue") 
+```
+
+The outlier test runs *n* tests on the studentized residuals. If the *p*-value is significant (with a Bonferonni correction), the point is an outlier with significant influence.
+
+```{r}
+car::outlierTest(m_red)
+car::influencePlot(m_red)
+car::outlierTest(m2)
+```
+
+# Partial Regression
+
+```{r}
+car::avPlots(m_red)
+car::avPlots(m2)
+```
+
+# Ceres Plots
+
+Testing for non-linearity
+
+```{r}
+car::crPlots(m_red)
+car::crPlots(m2)
+```
+
+# Global Validation of Linear Models Assumptions
+
+```{r, fig.height=10}
+library(gvlma)
+gvlma(m_red) %>% summary
+gvlma(m_red) %>% plot
+gvlma(m2) %>% summary
+gvlma(m2) %>% plot
+```
+
+# Conditional Distributions
+
+## 31% of applicants pass the program's final test.
+
+```{r ConditionalPass, echo = FALSE}
+x <- seq(10,90,0.01)
+Qualify <- 60
+
+x <- seq(10,90,0.01)
+Pass <- 55
+par(mar = c(4,0.5,0.5,0.5))
+plot(dnorm(x,50,10) ~ x,axes = F,ann = F,type = "n")
+axis(1,at = seq(10,90,10))
+title(xlab = expression(textstyle(Final~Test) %~% italic(N)(50,10 ^ 2)))
+xPass <- seq(10,Pass,0.01)
+yPass <- dnorm(xPass,50,10)
+polygon(c(min(xPass),xPass,max(xPass)),c(0,yPass,0),col = rgb(0,0,1,alpha = 0.2),border = NA)
+xPass <- seq(Pass,90,0.01)
+yPass <- dnorm(xPass,50,10)
+polygon(c(min(xPass),xPass,max(xPass)),c(0,yPass,0),col = rgb(1,0,0,alpha = 0.2),border = NA)
+
+points(Pass,0,pch = 16)
+text(Pass,0,bquote(Passing~Score == .(Pass)),pos = 3)
+text(Pass,0.011,paste0(round(100 - 100*pnorm(Pass,50,10)),"% Pass"),col = 'red',pos = 4)
+text(Pass,0.011,paste0(round(100*pnorm(Pass,50,10)),"% Fail"),col = 'blue',pos = 2)
+```
+
+## Conditional pass rates
+
+```{r, echo = FALSE}
+X <- 60
+Pass <- 55
+Qualify <- 60
+rho <- 0.8
+Xmu <- 50
+Xsigma <- 10
+Ymu <- 50
+Ysigma <- 10
+SEE <- Ysigma*sqrt(1 - rho ^ 2)
+SampleSize <- 10000
+XYmu <- c(Xmu,Ymu)
+XYcov <- matrix(c(Xsigma ^ 2,Xsigma*Ysigma*rho,Xsigma*Ysigma*rho,Ysigma ^ 2),nrow = 2)
+set.seed(80)
+pXY <- rmvnorm(SampleSize,mean = XYmu,sigma = XYcov)
+par(mar = c(5,5,2,1),pty = "s")
+plot(pXY,ann = F,axes = F,pch = 16,cex = (round(pXY[,1],0) == Qualify)*0.3 + 0.2,col = rgb(pXY[,2] > Pass,0,pXY[,2] <= Pass,alpha = 0.2 + 0.2*(round(pXY[,1],0) == Qualify)),xlim = c(Xmu - 4 * Xsigma,Xmu + 4 * Xsigma),ylim = c(Xmu - 4 * Ysigma,Ymu + 4 * Ysigma))
+axis(1,at = seq(Xmu - 4 * Xsigma, Xmu + 4 * Xsigma,Xsigma))
+axis(2,at = seq(Ymu - 4 * Ysigma,Ymu + 4 * Ysigma,Ysigma))
+abline(h = Pass,col = "gray",lty = 2)
+abline(v = Qualify,col = "gray",lty = 2)
+title(main = bquote("Conditional Distribution when Qualifying Test = "*.(Qualify)),xlab = expression("Qualifying Test ~ " * italic(N)(50,10 ^ 2)),ylab = expression("Final Test ~ " * italic(N)(50,10 ^ 2)))
+text(20,80,bquote(italic(r[xy]) == .(rho)),cex = 2)
+yhat <- (Qualify - Xmu) * rho + Ymu
+points(Qualify,yhat,pch = 16)
+Arrows(15,rho*(15 - 50) + 50,85,rho*(85 - 50) + 50,col = rgb(0,0,0,alpha = 0.2),code = 3,arr.adj = 0)
+text(Qualify + 8,yhat,labels = bquote(italic(N(hat(Y) == .(yhat),s[e] ^ 2 == .(round(SEE,2)) ^ 2))),srt = 90)
+# Arrows(Qualify,yhat,Qualify,yhat+SEE,arr.adj = 1)
+
+# text(Qualify-2,yhat+SEE/2,labels = bquote(italic(s[e])==.(round(SEE,2))),srt = 90)
+
+NormalHeight <- 250
+NormalFloor <- 10
+
+text(92,Pass + 10,bquote(.(round(100 - 100*pnorm(Pass,Ymu,Ysigma)))*"% Pass"),srt = 90,col = rgb(1,0,0))
+text(92,Pass - 10,bquote(.(round(100*pnorm(Pass,Ymu,Ysigma))) * "% Fail"),srt = 90,col = rgb(0,0,1))
+
+
+text(Qualify + 3,yhat + 10,bquote(.(round(100 - 100*pnorm(Pass,yhat,SEE))) * "% Pass"),srt = 90)
+text(Qualify + 3,yhat - 10,bquote(.(round(100 * pnorm(Pass,yhat,SEE))) * "% Fail"),srt = 90)
+
+xN <- cbind(seq(Xmu - 4*Xsigma,Xmu + 4*Xsigma,0.1),NormalFloor + NormalHeight*dnorm(seq(Xmu - 4 * Xsigma,Xmu + 4 * Xsigma,0.1),Xmu,Xsigma))
+yN <- cbind(100 - NormalFloor - NormalHeight * dnorm(seq(Ymu - 4 * Ysigma, 
+    Ymu + 4 * Ysigma, 0.1), Ymu, Ysigma), seq(Ymu - 4 * Ysigma, Ymu + 4 * 
+    Ysigma, 0.1))
+
+polygon(rbind(c(100 - NormalFloor, Pass), yN[yN[, 2] >= Pass, ], c(100 - 
+    NormalFloor, Ymu + 4 * Ysigma)), col = rgb(1, 0, 0, alpha = 0.2), border = NA)
+polygon(rbind(c(100 - NormalFloor, Pass), c(100 - NormalFloor, Ymu - 4 * 
+    Ysigma), yN[yN[, 2] <= Pass, ]), col = rgb(0, 0, 1, alpha = 0.2), border = NA)
+polygon(xN, col = rgb(0.5, 0, 0.5, alpha = 0.2), border = NA)
+polygon(rbind(c(Qualify, NormalFloor), xN[xN[, 1] >= Qualify, ], c(Xmu + 
+    4 * Xsigma, NormalFloor)), col = rgb(0.5, 0, 0.5, alpha = 0.2), border = NA)
+text(Xmu, NormalFloor - 1.7, label = "Do No Admit", col = rgb(0.5, 0, 0.5, 
+    alpha = 0.6))
+text(Qualify + 5, NormalFloor - 1.7, label = "Admit", col = rgb(0.5, 0, 
+    0.5))
+
+cN <- cbind(Qualify - 0.4 * NormalHeight * dnorm(seq(yhat - 4 * SEE, yhat + 
+    4 * SEE, 0.1), yhat, SEE), seq(yhat - 4 * SEE, yhat + 4 * SEE, 0.1))
+polygon(rbind(c(Qualify, Pass), cN[cN[, 2] >= Pass, ], c(Qualify, yhat + 
+    4 * SEE)), col = rgb(1, 0, 0, alpha = 0.2), border = NA)
+polygon(rbind(c(Qualify, Pass), c(Qualify, yhat - 4 * SEE), cN[cN[, 2] <= 
+    Pass, ]), col = rgb(0, 0, 1, alpha = 0.2), border = NA)
+```
+
+# Conditional Distribution Example
+
+What percent of college students obtain a GPA of 2.0 or better when their ACT is 16 and their High School GPA is 3.0?
+
+```{r}
+# Predicted College GPA
+yhat <- predict(m2, newdata = data.frame(HSGPA = 2, ACT = 16))
+# Standard Error of the Estimate
+SEE <- m2 %>% glance() %$% sigma
+PercentAbove2 <- (1 - pnorm(2, mean = yhat, sd = SEE)) * 100 %>% round
+
+```
+
+Percent above 2.0 = `r PercentAbove2`
+
+# Interaction in Regression
+
+$$\hat{Y} = b_0 + b_1 X_1 + b_2 X_2 + b_3 X_1X_2$$
+
+$X_1$ moderates the effect of $X_2$ on $Y$:
+
+$$\hat{Y} = \underbrace{(b_0 + b_1 X_1)}_{\text{Conditional Intercept}} + \underbrace{(b_2 + b_3 X_1)}_{\text{Conditional Slope}}X_2$$
+
+$b_0$ = expected value of $Y$ when $X_1 = 0$ an $X_2 = 0$
+
+$b_1$ = slope for $X_1$ when $X_2 = 0$
+
+$b_2$ = slope for $X_2$ when $X_1 = 0$
+
+$b_3$ = change in slope for $X_1$ when $X_2$ changes by 1
+
+Equivalently, $X_2$ moderates the effect of $X_1$ on $Y$:
+
+$$\hat{Y} = \underbrace{(b_0 + b_2 X_2)}_{\text{Conditional Intercept}} + \underbrace{(b_1 + b_3 X_2)}_{\text{Conditional Slope}}X_1$$
+
+$b_3$ = change in slope for $X_2$ when $X_1$ changes by 1
+
+
+```{r, webgl = TRUE}
+library(rgl)
+
+x1 <- seq(-4,4,0.1)
+x2 <- seq(-4,4,0.1)
+
+b0 <- 0
+b1 <- 0.4
+b2 <- 0.2
+b3 <- -0.1
+yhat <- function(x1,x2,b0,b1,b2,b3) {b0 + b1 * x1 + b2 * x2 + b3 * x1 * x2}
+y <- outer(x1, x2, yhat, b0, b1, b2, b3)
+
+persp3d(x1,x2,y, col = "royalblue", alpha = 0.2, zlim = c(-4,4), axes = F)
+axis3d("x", -4:4)
+axis3d("y",-4:4)
+axis3d("z",-4:4)
+aspect3d(1,1,1)
+n <- 500
+x1 <- rnorm(n)
+x2 <- rnorm(n)
+e <- rnorm(n,0,0.3)
+rain <- rainbow(n)
+y <- b0 + b1 * x1 + b2 * x2 + b3 * x1 * x2 + e
+spheres3d(x1, x2, y, 0.1, col = rain[rank(e)], alpha = 0.5)
+```
+
+# Interaction Example
+
+```{r GenerateImpulsivityData, include=FALSE}
+n <- 10000
+library(lavaan)
+m <- "
+Psychopathy ~ 0.4 * Impulsivity + 0.3 * Abuse
+Abuse ~ 0.3 * Impulsivity
+"
+d <- simulateData(m, sample.nobs = n)
+d$Violence <- 0.3 * d$Psychopathy + 
+  0.15 * d$Impulsivity + 
+  0.1 * d$Psychopathy * d$Impulsivity + 
+  0.4 * d$Abuse + 
+  0.4 * rnorm(n)
+dt <- as.data.frame(apply(d, 2, scale) * 10 + 50)
+```
+
+```{r Analysis}
+# Model
+head(dt) %>% pander()
+m_main <- lm(Violence ~ Impulsivity + Psychopathy + Abuse, dt) 
+tidy(m_main) %>% pander
+m_3way <- lm(Violence ~ Impulsivity * Psychopathy * Abuse, dt)
+m_3way %>% tidy %>% pander
+anova(m_main, m_3way) %>% as.data.frame() %>% pander
+m_2way <- update(m_3way, .~. - Impulsivity:Psychopathy:Abuse)
+m_2way %>% tidy %>% pander
+anova(m_2way, m_3way) %>% as.data.frame() %>% pander
+m_2way_ip.ia <- update(m_2way, .~. - Psychopathy:Abuse)
+m_2way_ip.ia %>% tidy %>% pander
+anova(m_2way_ip.ia, m_2way) %>% as.data.frame() %>% pander
+m_2way_ip <- update(m_2way_ip.ia, .~. - Impulsivity:Abuse)
+m_2way_ip %>% tidy %>% pander
+anova(m_2way_ip, m_2way_ip.ia) %>% as.data.frame() %>% pander
+
+
+anova(m_3way, m_2way, m_2way_ip.ia, m_2way_ip, m_main)
+
+deltaRTable <- function(...){
+  # Gather up lm objects in a list
+  dots <- list(...)
+  # Check if all objects are lm objects
+  if (unique(lapply(dots,class)) == "lm") {
+  # Compare all models
+  df <- as.data.frame(anova(...))
+  # Extract all R-squared from all models
+  df$R2 <- sapply(lapply(dots, summary), "[[", "r.squared")
+  # Calculated change in R-squared
+  df$dR2 <-  c(NA,diff(df$R2))
+  # Remove Sums of Squares
+  df <- df[,c(-2,-4)]
+  # Format columns
+  df$F <- formatC(df$F, 2, format = "f")
+  df$R2 <- formatC(df$R2, 2, format = "f")
+  df$dR2 <- formatC(df$dR2, 2, format = "f")
+  df$`Pr(>F)` <- formatC(df$`Pr(>F)`, 2, format = "f")
+  # Rename columns
+  colnames(df) <- c("$df_{res}$","$df$", "$F$", "$p$", "$R^2$", "$\\Delta R^2$")
+  # Add row names
+  rownames(df) <- paste0("`",sapply(lapply(dots, summary), "[[", "terms"),"`")
+  return(df)
+  } else stop("All inputs must be of class lm.")
+}
+
+deltaRTable(m_main, m_2way_ip, m_2way_ip.ia, m_2way, m_3way) %>% pander(emphasize.rownames = F)
+```
+
+# Interaction Plot in 2D
+
+```{r}
+# Create all combinations of the data I want to plot
+d_predicted <- expand.grid(Psychopathy = c(30,70),
+                  Impulsivity = seq(40,60,10),
+                  Abuse = seq(40,60,10))
+# Predicted values
+d_predicted$Violence <- predict(m_2way_ip, newdata = d_predicted)
+# Labels
+vLabs <- c("−1 SD", "Mean", "+1 SD")
+# Change Predictors to factors for easy plotting
+d_predicted <- d_predicted %>% 
+  mutate(Impulsivity = factor(Impulsivity, labels = vLabs), 
+         Abuse = factor(Abuse, labels = vLabs))
+# Plot
+ggplot(d_predicted, aes(x = Psychopathy, 
+                        y = Violence, 
+                        color = Impulsivity)) + 
+  geom_line(size = 1) + 
+  facet_grid(. ~ Abuse, labeller = label_both) + 
+  theme(legend.position = "top") + 
+  ylim(30, 70) + 
+  labs(y = "Predicted Violence") +
+  scale_color_manual(values = c("royalblue","darkorchid","firebrick"))
+```
+
+# Interaction Plot in 3D
+
+```{r, webgl = TRUE}
+library(rgl)
+# Create all combinations of the data I want to plot
+d_predicted <- expand.grid(
+  Psychopathy = seq(30,70),
+  Impulsivity = seq(30,70),
+  Abuse = seq(40,60,10))
+# Predicted values
+d_predicted$Violence <- predict(m_2way_ip, 
+                                newdata = d_predicted)
+
+pColor <- c("royalblue", "darkorchid", "firebrick")
+xAbuse <- seq(40,60,10)
+open3d(windowRect = c(100,100,1000,1000))
+for (i in 1:3) {
+  with(d_predicted %>% 
+         filter(Abuse == xAbuse[i]),
+       persp3d(seq(30,70), 
+               seq(30,70), 
+               Violence, 
+               add = TRUE, 
+               col = pColor[i], 
+               alpha = 0.5))}
+axis3d('x',pos = c(NA, 30, 30), at = seq(30,70,10))
+axis3d('y',pos = c(30, NA, 30), at = seq(30,70,10))
+axis3d('z',pos = c(30, 30, NA), at = seq(30,70,10))
+title3d(xlab = "Psychopathy", 
+        ylab = "Impulsivity", 
+        zlab = "Violence")
+text3d(75,75, d_predicted %>% 
+         filter(Psychopathy == 70, 
+                Impulsivity == 70) %>%
+         select(Violence) %>% 
+         unlist,texts = paste("Abuse", vLabs))
+```
+
+# Simple Slopes
+
+```{r}
+dt <- dt %>% 
+  mutate(
+    cImpulsivity = Impulsivity - mean(Impulsivity,na.rm = TRUE),
+    LowImpulsivity = cImpulsivity + sd(Impulsivity, na.rm = TRUE),
+    HighImpulsivity = cImpulsivity - sd(Impulsivity, na.rm = TRUE),
+    cAbuse = Abuse - mean(Abuse, na.rm = TRUE),
+    cPsychopathy = Psychopathy - mean(Psychopathy, na.rm = TRUE))
+
+# Effect of Psychopathy with -1 SD Impulsivity
+lm(Violence ~ LowImpulsivity * cPsychopathy + cAbuse, data = dt) %>% 
+  tidy %>% pander()
+# Effect of Psychopathy with Centered Impulsivity
+lm(Violence ~ cImpulsivity * cPsychopathy + cAbuse, data = dt) %>% 
+  tidy %>% pander
+# Effect of Psychopathy with -1 SD Impulsivity
+lm(Violence ~ HighImpulsivity * cPsychopathy + cAbuse, data = dt) %>% 
+  tidy %>% pander()
+```
+
+# Simple Slopes with standardized variables
+
+```{r}
+zdt <- scale(dt) %>% 
+  as.data.frame() %>% 
+  mutate(LowImpulsivity = Impulsivity + 1,
+         HighImpulsivity = Impulsivity - 1)
+# Effect of Psychopathy with -1 SD Impulsivity
+lm(Violence ~ LowImpulsivity * Psychopathy + Abuse, data = zdt) %>% 
+  tidy %>% pander()
+# Effect of Psychopathy with Centered Impulsivity
+lm(Violence ~ Impulsivity * Psychopathy + Abuse, data = zdt) %>% 
+  tidy %>% pander
+# Effect of Psychopathy with -1 SD Impulsivity
+lm(Violence ~ HighImpulsivity * Psychopathy + Abuse, data = zdt) %>% 
+  tidy %>% pander()
+```
+
+# Polynomial or Interaction?
+
+```{r}
+mv2 <- lm(Violence ~ Impulsivity + I(Impulsivity ^ 2) + Psychopathy + I(Psychopathy ^ 2), data = dt) 
+mv2 %>% tidy %>% pander()
+mv2i <- lm(Violence ~ Impulsivity + I(Impulsivity ^ 2) + Psychopathy + I(Psychopathy ^ 2) + Impulsivity:Psychopathy, data = dt) 
+mv2i %>% tidy %>% pander()
+anova(mv2,mv2i) %>% pander
+```
+
+# Acknowledgement
+
+In making these slides, I relied heavily on:
+
+Fox, J. (2016). *Applied Regression Analysis and Generalized Linear Models (3^rd^ Ed.)*. Thousand Oaks, CA: Sage.
+
+```{r, eval=FALSE, include=FALSE}
+## installed packages
+   pkgs <- unique(installed.packages()[,1])
+   bibs <- lapply(pkgs, function(x) try(toBibtex(citation(x))))
+   n.installed <- length(bibs)
+
+   ## omit failed citation calls
+   ok <- !(sapply(bibs, class) == "try-error")
+   pkgs <- pkgs[ok]
+   bibs <- bibs[ok]
+   n.converted <- sum(ok)
+   ## unify to list of Bibtex
+   bibs <- lapply(bibs, function(x) if (inherits(x, "Bibtex")) list(x) else x)
+
+   ## add bibtex keys to each entry
+   pkgs <- lapply(seq_along(pkgs), function(i) if (length(bibs[[i]]) > 1)
+     paste(pkgs[i], 1:length(bibs[[i]]), sep = "") else pkgs[i])
+   pkgs <- do.call("c", pkgs)
+   bibs <- do.call("c", bibs)
+   for (i in seq_along(pkgs)) bibs[[i]][1] <-
+     gsub("{,", paste("{", pkgs[i], ",", sep = ""), bibs[[i]][1], fixed = TRUE)
+
+   ## write everything to a single .bib file
+   writeLines(do.call("c", lapply(bibs, as.character)), "Loaded.bib")
+
+# print(paste((.packages()), collapse = ", @"))
+```
+
+# References

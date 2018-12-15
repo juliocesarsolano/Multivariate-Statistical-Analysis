@@ -1,0 +1,334 @@
+---
+title: "MANOVA"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+params: 
+  fast: TRUE
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    highlight: kate
+    widescreen: yes
+    footer: <a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+bibliography: Loaded.bib
+csl: apa.csl
+---
+
+```{r setup,echo = FALSE,message = FALSE}
+library(magrittr)
+library(tables)
+library(ggplot2)
+library(knitr)
+library(broom)
+library(pander)
+library(MVN)
+library(scales)
+library(car)
+library(dplyr)
+
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("missing","")
+
+pvalueAPA <- function(p, inline = FALSE, mindigits = 2, maxdigits = 3){
+   fp <- function(x){
+      p.round <- ifelse(x > 0.5 * 10 ^ (-1 * mindigits),mindigits,maxdigits)
+  if (x > 0.5 * 10 ^ (-1 * p.round)) {
+    paste0(ifelse(inline,"$p=", ""),
+           sub(pattern = "0.", 
+               replacement = ".", 
+               formatC(x, p.round, format = "f")),
+           ifelse(inline,"$", ""))
+    } else {
+      paste0(ifelse(inline, "$p<","<"),
+             sub(pattern = "0.", 
+                 replacement =  ".",
+                 10 ^ (-1 * maxdigits)),
+             ifelse(inline,"$",""))
+    }
+  }
+  sapply(p, fp)
+}
+
+rinline  <-  function(code) {
+  sprintf('``` `r %s` ```', code)
+}
+
+themeMod <- theme_grey() + 
+  theme(text = element_text(family = "serif", size = 10),
+        legend.position = "none",
+        axis.title.x = element_text(vjust = -0.75),
+        axis.title.y = element_text(vjust = 1.75))
+theme_set(themeMod)
+# Custom colors
+myFill <- function(...){
+  scale_fill_manual(values = alpha(c("royalblue", "firebrick", "darkorchid"),0.5),...)
+}
+scale_fill_discrete <- myFill
+myColor <- function(...){
+  scale_colour_manual(values = c("royalblue", "firebrick", "darkorchid"),...)
+}
+scale_colour_discrete <- myColor
+
+
+manovaTable <- function(m, caption = "MANOVA Table", test = "Pillai"){
+  require(broom)
+  require(pander)
+  require(dplyr)
+  testName <- switch(test,
+                     Pillai = "Pillai's Trace", 
+                     Wilks = "Wilks' $\\Lambda$",
+                     `Hotelling-Lawley` = "Hotelling-Lawley's Trace",
+                     Roy = "Roy's Largest Root")
+  m %>% manova %>% 
+    tidy(test = test) %>% 
+    mutate(p.value = pvalueAPA(p.value),
+           term = gsub(x = term, pattern = ":"," $\\\\times$ ") ) %>% 
+    set_colnames(c("Factor",
+                   "df",
+                   testName,
+                   "$F$",
+                   "$df_1$",
+                   "$df_2$",
+                   "$p$")) %>% 
+    pander(caption = caption, 
+           round = 2, 
+           split.tables = Inf, 
+           style = "rmarkdown", 
+           emphasize.rownames = FALSE, 
+           keep.trailing.zeros = TRUE, 
+           table.alignment.rownames = "left", 
+           missing = "")
+}
+manovaUnivariateTable <- function(m, caption = "Univariate Analyses"){
+  require(broom)
+  require(pander)
+  require(dplyr)
+  require(car)
+  m %>% tidy %>% 
+    mutate(response = ifelse(response == Lag(response),
+                             NA,
+                             response),
+           p.value = pvalueAPA(p.value),
+           term = gsub(x = term, pattern = ":"," $\\\\times$ "))  %>% 
+    set_colnames(c("Outcome",
+                   "Predictor",
+                   "$b$",
+                   "$\\sigma_b$",
+                   "$t$",
+                   "$p$")) %>% 
+    pander(caption = "Univariate Analyses")
+}
+
+
+```
+
+# ANOVA on steroids
+
+|   |1 Response Variable|2 or More  Response Variables|
+|---|:----------------:|:---------------------------:|
+|*1 Dichotomous Predictor* |*t*-test|Hotelling's *T^2^*|
+|*1 or More Polytomous Predictors*|ANOVA|MANOVA|
+|*1 or More Continuous Predictors*|Multiple Regression|Canonical Correlation Analysis|
+
+```{r MakeData, include=FALSE}
+set.seed(1)
+n <- 300
+main <- sample(c(0,1), n * 2, TRUE) %>% matrix(ncol = 2)
+x <- cbind(rep(1,n), main, main[,1] * main[,2]) 
+b <- cbind(c(10,1,-1,0),
+           c(10,1,0,-3),
+           c(10,1,-1,0))
+yhat <- x %*% b
+eSD <- c(3,3, 3)
+ecor <- matrix(c(1.0,0.4,0.6,
+                 0.4,1.0,0.5,
+                 0.6,0.5,1.0), 3)
+ecov <- lavaan::cor2cov(ecor, eSD)
+y <- yhat + mvtnorm::rmvnorm(n, sigma = ecov)
+d <- data.frame(x,y) %>% set_colnames(c("Intercept","A","B","AB","Y1","Y2","Y3")) %>% select(-Intercept, -AB) %>% mutate(A = factor(A, labels = c("A1","A2")), B = factor(B, labels = c("B1","B2")))
+write.csv(d,"manova.csv", row.names = FALSE)
+```
+
+# MANOVA in R
+
+# Descriptives
+
+```{r}
+head(d) %>% pander
+
+tabular((Factor(A, levelnames = c("$A_1$","$A_2$")) + 1) * 
+        (Factor(B, levelnames = c("$B_1$","$B_2$")) + 1) ~ 
+         Heading("N") * 1 + 
+          (Y1 + Y2 + Y3) * 
+        (Heading("Mean") * mean + 
+         Heading("SD") * sd), 
+        data = d) %>% pander(emphasize.rownames = F)
+```
+
+
+
+
+# Plotting MANOVA results
+
+```{r}
+ggplot(d, aes(A,Y1)) + 
+  geom_violin(col = NA) + 
+  stat_summary(fun.data = "mean_cl_normal") + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) +
+  facet_grid(. ~ B)
+
+ggplot(d, aes(A,Y2)) + 
+  geom_violin(col = NA) + 
+  stat_summary(fun.data = "mean_cl_normal") + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) +
+  facet_grid(. ~ B)
+
+ggplot(d, aes(A,Y2)) + 
+  geom_violin(col = NA) + 
+  stat_summary(fun.data = "mean_cl_normal") + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) +
+  facet_grid(. ~ B)
+```
+
+
+# Multivariate Effects
+
+```{r}
+m <- lm(cbind(Y1,Y2,Y3) ~ A * B, d)
+
+m %>% manova %>% summary
+m %>% manova %>% summary(test = "Wilks")
+m %>% manova %>% summary(test = "Hotelling-Lawley")
+
+
+```
+
+Roy's Largest Root
+
+Measures distances on the first canonical root.
+```{r}
+m %>% manova %>% summary(test = "Roy")
+
+```
+
+# Multivariate Table
+
+See `manovaTable` function in the setup chunk
+
+```{r}
+m %>% manova %>% tidy 
+
+manovaTable(m)
+```
+
+
+# Univariate Effects
+
+```{r}
+m %>% summary
+
+m %>% summary.aov
+```
+
+# Univariate Table
+
+See `manovaUnivariateTable` function in the setup chunk
+
+```{r unitable}
+m %>% tidy
+
+manovaUnivariateTable(m)
+
+```
+
+# Convenient Display
+
+```{r manovadisplay}
+m %>% car::Manova() %>% summary
+```
+
+
+# Multivariate Outler
+
+```{r multioutliers}
+e <- mvOutlier(m$residuals)
+```
+
+
+# Assumptions
+
+ANOVA | MANOVA
+:----------|:--------
+Normality | Multivariate Normality
+Independence | Independence (Dependent measures may be correlated)
+Homogeneity of Variance $(\sigma_1^2=\sigma_2^2)$|Homogeneity of Covariance $\boldsymbol{\Sigma_1=\Sigma_2}$
+
+# Univariate Assumptions
+
+```{r uniassumptions}
+lm(Y1 ~ A * B, d) %>% plot(which = 1)
+lm(Y1 ~ A * B, d) %>% plot(which = 2)
+lm(Y1 ~ A * B, d) %>% plot(which = 3)
+lm(Y1 ~ A * B, d) %>% plot(which = 4)
+lm(Y1 ~ A * B, d) %>% plot(which = 5)
+lm(Y1 ~ A * B, d) %>% plot(which = 6)
+lm(Y2 ~ A * B, d) %>% plot(which = 1)
+lm(Y2 ~ A * B, d) %>% plot(which = 2)
+lm(Y2 ~ A * B, d) %>% plot(which = 3)
+lm(Y2 ~ A * B, d) %>% plot(which = 4)
+lm(Y2 ~ A * B, d) %>% plot(which = 5)
+lm(Y2 ~ A * B, d) %>% plot(which = 6)
+
+d$Y3[1] <- 500
+
+lm(Y3 ~ A * B, d) %>% plot(which = 1)
+lm(Y3 ~ A * B, d) %>% plot(which = 2)
+lm(Y3 ~ A * B, d) %>% plot(which = 3)
+lm(Y3 ~ A * B, d) %>% plot(which = 4)
+lm(Y3 ~ A * B, d) %>% plot(which = 5)
+lm(Y3 ~ A * B, d) %>% plot(which = 6)
+
+d$Y3[1] <- NA
+lm(Y3 ~ A * B, d) %>% plot(which = 1)
+lm(Y3 ~ A * B, d) %>% plot(which = 2)
+lm(Y3 ~ A * B, d) %>% plot(which = 3)
+lm(Y3 ~ A * B, d) %>% plot(which = 4)
+lm(Y3 ~ A * B, d) %>% plot(which = 5)
+lm(Y3 ~ A * B, d) %>% plot(which = 6)
+
+```
+
+
+# Multivariate Normality of Residuals
+
+```{r multivariatenormality}
+library(MVN)
+mardiaTest(m$residuals, qqplot = TRUE)
+mvnPlot(mardiaTest(m$residuals[,c(1,2)]))
+mvnPlot(mardiaTest(m$residuals[,c(2,3)]))
+mvnPlot(mardiaTest(m$residuals[,c(1,3)]))
+```
+
+# Homogeneity of Covariance
+
+Box's M tests the equality of covariance matrices. It is extremely sensitive to normality violations.
+
+```{r homogeneitycovariance}
+biotools::boxM(d %>% select(Y1, Y2, Y3), d$A)
+biotools::boxM(d %>% select(Y1, Y2, Y3), d$B)
+```
+
+# References
+
+In making these slides, I relied heavily on:
+
+Schumacker, R. E. (2016). *Using R with multivariate statistics*. Thousand Oaks, CA: Sage.

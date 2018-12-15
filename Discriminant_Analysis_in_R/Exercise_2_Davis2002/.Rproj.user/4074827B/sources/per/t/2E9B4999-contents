@@ -1,0 +1,363 @@
+---
+title: "Linear Discriminant Analysis (LDA) in R"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Oct 20, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(1235)
+```
+
+
+# Loading Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+library(MASS)                       # lda, ldahist functions
+library(MVN)                        # mvn: outliers multi-variable, normalidad multi-variable
+library(caret)                      # confusionMatrix, train functions
+library(PerformanceAnalytics)       # chart.Correlation function
+library(klaR)                       # partimat function (final plot)
+library(kableExtra)
+
+
+# Organizing Packge information for table
+packages <- c("MASS", "MVN", "caret", "PerformanceAnalytics", "klaR", "kableExtra")
+display <- c("Package","Title", "Maintainer", "Version", "URL")
+table <- matrix(NA, 1, NROW(display), dimnames = list(1, display))
+for(i in 1:NROW(packages)){
+list <- packageDescription(packages[i])
+table <- rbind(table, matrix(unlist(list[c(display)]), 1, NROW(display), byrow = T))
+}
+table[,NROW(display)] <- stringr::str_extract(table[,NROW(display)], ".+,")
+
+# Table of packages
+kable(table[-1,], format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Problem Definition
+En el siguiente ejercicio trataremos el análisis discriminante. El análisis de clusters y el análisis discriminante son métodos de clasificación de individuos en categorías. La diferencia principal entre ellos escriba en que en el análisis discriminante se conoce a priori el grupo de pertenencia, mientras que el análisis de cluster sirve para formar grupos (conglomerados, clusters, racimos, etc.) lo mas homogéneos posibles.  
+
+El objetivo esencial del análisis discriminantelineal es utilizar los valores previamente conocidos de las variables independientes para predecir en qué categoría de la variable dependiente corresponde. A veces el análisis discriminante se conoce en ocasiones como análisis de la clasificación, ya que define una regla o esquema de clasificación que permita predecir la población a la que es más probable que tenga que pertenecer una nueva observación. Es decir asignar nuevos individuos al grupo que mejor corresponde en una clasificación ya establecida, construida a partir de individuos distintos. Por otro lado, la importancia de este método reside en que haciendo un análisis previo de la discriminación de las variables podemos evitar medir mas variables en el campo, analizar mas elementos, etc., y conseguir una correcta clasificación.  
+
+**El Problema**: en el norte de Suiza, en unas montañas muy forestadas, se realizo una prospección de depósitos metálicos. La investigación con magnetómetro aéreo ha proporcionado resultados limitados, por lo que se propuso realizar una prospección geoquímica basada en el análisis de las aguas superficiales procedente del drenaje de dichas áreas. Se eligieron siete variables y dos zonas de medidas. El grupo 1 consiste en medidas en áreas que contienen actividad minera, y por lo tanto, los depósitos metálicos. El Grupo 2 consiste en un conjunto de medidas de varias áreas que proporcionan resultados similares y que han sido fuertemente prospectadas sin obtener resultados de interés económico. Para analizar los datos, calcular la función discriminante entre las regiones productivas y no-productivas. Determinar si la diferencia entre los dos grupos es significante, e investigar la importancia relativa de las variables utilizadas. Dentro de este estudio, se realizaron un conjunto de medidas de aguas en áreas que no se saben si tienen que ser prospectadas. En base a la función discriminante, ¿se puede seleccionar alguna área para prospectar?. Tomado de Davis (2002) - Statistics and Data Analysis in Geology.  
+
+
+# Data Source
+```{r, data, warning=FALSE, message=FALSE}
+metalicos <- read.csv("metalicos.csv", header = T, skip = ",")
+metalicos$Group <- as.factor(metalicos$Group)
+str(metalicos)                                                             # estructura del dataframe
+
+# Balance de Grupos
+table(metalicos$Group)
+
+X <- metalicos[, -14]
+```
+
+
+# New Data to Classifier
+```{r}
+clasificar <- read.csv("clasificar.csv", header = T, skip = ",")
+clasificar$Group <- as.factor(clasificar$Group)
+str(clasificar)                                                          # estructura del dataframe
+```
+
+
+# Matriz de Correlacion
+```{r}
+cor(X, method = "spearman", use = "complete.obs")
+chart.Correlation(X, histogram = TRUE, pch="*", method = c("spearman"), bg=metalicos$Group, pch="+")
+```
+
+No se observan datos outliers, también se logra evidenciar cierta normalidad en la distribución de frecuencia de ambas variables. Analicemos la presencia de outliers multi-variables utilizando la Distancia de Mahalanobis.
+
+
+# Detección de Outliers Multi-variables
+```{r}
+par(mfrow = c(1, 2))
+# Distancia de Mahalanobis
+outliers <- mvn(data = X, multivariateOutlierMethod = "quan")
+
+# Distancia ajustada de Mahalanobis
+outliers.adj <- mvn(data = X, multivariateOutlierMethod = "adj")
+```
+
+
+Veamos ahora la normalidad uni-variable a través de gráficos QQ-PLOT. 
+
+
+# Normalidad Uni-variable
+```{r}
+# QQ-Plot
+#par(mfrow=c(4,4))
+for (k in 1:13) {
+ v <- names(X)[k]
+  for (i in 1:2) {
+   l <- levels(metalicos$Group)[i]
+   x <- metalicos[metalicos$Group==1, v]
+qqnorm(x, main = paste("Group", l, v), pch = 19, col = i + 1)
+qqline(x)
+   }
+}
+```
+
+Además de la normalidad univariante, se requiere evaluar la normalidad multivariante. 
+
+
+# Normalidad Multi-variable
+mvn() -> función del paquete **MVN**, que incluye argumentos para llevar a cabo tests y gráficos de normalidad multivariante, detección de outliers multivariantes, tests y gráficos de normalidad univariante.  
+
+La presencia de valores atípicos puede ser causa de no cumplir esta condición. Por ello, es conveniente verificar si los datos tienen outliers multivariantes (valores extremos para combinaciones de variables) antes de comenzar con el análisis multivariante. Con el paquete MVN podemos evaluar la normalidad multivariante con tres de los test comúnmente utilizados, como el de Mardia, Royston y Henze-Zirkler, así como identificar los outliers multivariantes que puedan influir en el contraste.
+```{r}
+# **Test MVN de Royston**. Nota: no se aconseja usar este test si los datos cuentan con más de 5000 o menos de 3 observaciones, ya que depende del test de Shapiro Wilk.
+royston <- mvn(data = metalicos[, -14], mvnTest = "royston", multivariatePlot = "qq")
+royston
+
+
+# Test MVN de Henze-Zirkler
+hz <- mvn(data = metalicos[, -14], mvnTest = "hz")
+hz$multivariateNormality
+```
+
+
+Ambos test confirman que no se cumple la condicion de Normalidad Multi-variable. Esto debe ser tenido en cuenta al evaluar el performance de las predicciones de nuestro modelo.  
+
+
+Ahora realizaremos la prueba de igualdad de medias de los grupos: Test de Wilks (Ho: las medias de los grupos son iguales).  
+
+
+# Test de Igualdad de Medias
+Tabla de ANOVA con estadísticos F que permiten contrastar la hipótesis de igualdad de medias entre los grupos en cada variable independiente. 
+```{r}
+group <- as.factor(metalicos[, 14])
+Y <- as.matrix(metalicos[, 1:13])
+
+result <- manova(Y ~ group)
+test_Wilks <- summary(result, test = "Wilks")
+test_Wilks
+```
+
+La prueba de igualdad de medias de los grupos o Test de Wilks, nos muestra que el p-valor o Pr<0.05 (habrá diferencias entre las medias), por lo que se podrá aplicar el análisis discriminante.
+
+
+¿Qué variable(s) tiene mayor poder discriminatorio?
+La variable(s) que mayor poder discriminante tiene es la que tiene menor Pr (p.valor) o mayor F value. Veamos:
+
+
+# Poder Discriminatorio
+```{r}
+poder_discrim <- summary.aov(result) 
+poder_discrim	
+```
+
+Ba+Pb+Sr+Ni+Cu+Zn son las variables que mayor poder discriminante tienen, ya que, poseen el mayor F-value.  
+
+
+¿Cómo clasifica la función discriminante los datos clasificados inicialmente?
+
+
+# Fisher Discriminant Functions
+```{r}
+fit.lda <- lda(formula = group ~ Ba+Pb, data = X)
+fit.lda
+plot(fit.lda)
+
+predictions <- predict(fit.lda, X)
+table(group, predictions$class)
+
+#ldahist(data = predictions$x[,1], g=metalicos$Group, nbins = 25)
+```
+
+El número máximo de funciones discriminantes útiles se encuentra de la siguiente manera: el mínimo entre el número de grupos (G) menos 1 (G − 1) y el número de variables. La "**proportion of trace**" que se imprime cuando se escribe "fit.lda" (la variable devuelta por la función lda ()), es el porcentaje de separación alcanzado por cada función discriminante.  
+
+El modelo calcula automáticamente las probabilidades a priori (π0 = 0,5, π1 = 0,5), y el promedio de cada predictor dentro de cada clase, usados por el modelo como estimadores de µk. Los coeficientes proporcionan la combinación de los predictores para generar los discriminantes lineales para cada una de las observaciones de entrenamiento.  
+
+La función discriminante clasifica los datos conocidos o clasificados inicialmente, proporcionándonos una idea de la calidad de la función discriminante. Los resultados muestran que la función discriminante clasifica los 20 casos del grupo 1 en 17 casos en el grupo 1 y 3 en el grupo 2; mientras que los 20 casos del grupo 2 son clasificados correctamente en el grupo 2. 
+
+El modelo es capaz de clasificar correctamente (17+20)/(17+20+0+3)=0.925 (92.5%) de las observaciones cuando se emplean los datos completos.
+
+
+La función discriminante lineal de Fisher se define como:  
+
+$$
+D - C = A1*X1 + A2*X2 - C
+$$  
+
+Notese que R no arroja el valor de la constante (C), esto es debido a que de forma predeterminada, la función R 'lda' del paquete MASS, centra los datos. Para obtener la constante utilizaremos el siguiente código:  
+
+```{r}
+groupmean <- (fit.lda$prior %*% fit.lda$means)
+constant <- (groupmean %*% fit.lda$scaling)
+constant
+```
+
+Utilizando los valores de los coeficientes sin estádarizar de las funciones canónicas y la constante, podemos construir la función discriminante, como:  
+
+$$
+D - C = -0.00258*Ba - 0.03276*Pb - 2.4052
+$$   
+
+# Clasificación de los nuevos casos:
+```{r}
+lda.pred1 <- predict(fit.lda, clasificar)
+newcases <- lda.pred1$class
+newcases
+
+# Aplicando un threshold del 50% a las probabilidades a posterior podemos recrear las predicciones del modelo 
+sum(lda.pred1$posterior[, 1] >= 0.5)
+
+sum(lda.pred1$posterior[,1] < 0.5)
+```
+
+La función predict() ha calculado las probabilidades a posteriori de que cada nueva observación pertenezca a uno de los grupos. Es decir, la muestra 1, 2, 4, 5 y 6 pertenecen al grupo 2, mientras que la muestra 3 la clasifica en el grupo 1.  
+
+
+# Solution Exercise 2: LDA - Using Caret package
+El primer paso, activar el paquete caret. Luego, crea el resultado de predicción usando la función **train()**. Usaremos la función **confusionMatrix()** para ver la precisión de la predicción del modelo.  
+
+Dado que hay pocos datos, se utilizará la data completa y la técnica de Validación Cruzada (CV).
+```{r}
+
+fitControl <- trainControl(# 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,                         # number of folds
+                           repeats = 3,
+                           allowParallel = TRUE                 # Parallel processing
+                           )
+
+# LDA
+fit.lda.cv <- train(Group ~ Ba+Pb, 
+                data = metalicos, 
+                #preProc = c("center", "scale"),
+                #method = "stepLDA",
+                method = "lda",
+                metric = "Accuracy",                            # Specify which metric to optimize
+                trControl = fitControl
+                )
+
+print(fit.lda.cv)
+fit.lda.cv$finalModel
+```
+
+Después de realizar la validación cruzada repetida, la exactitud de nuestro modelo es de 0.936 (94%); esto nos está indicando que nuestro modelo predice correctamente el 94% de las veces.   
+
+Utilizando los valores de los coeficientes estándarizados de las funciones canónicas, podemos construir la función discriminante final, como:    
+
+$$
+F = -0.00257*Ba - 0.03276*Pb - (-2.4052)
+$$ 
+
+$$
+F = -0.00257*Ba - 0.03276*Pb + 2.4052
+$$
+
+Interpretación: si el valor de F < 0, entonces, la muestra pertenece al grupo X1; si el valor de F > 0, entonces, la muestra pertenece al grupo X2. Por ejemplo, si caracterizamos una muestra de agua de los drenajes superficiales y el porcentaje de Ba es 630 ppm y el porcentaje de Pb es de 90 ppm, ésta pertenecería al Grupo X1, debido a que F < 0.
+
+
+# Clasificación de los nuevos casos:
+```{r}
+lda.pred2 <- predict(fit.lda.cv, clasificar)
+lda.pred2
+```
+
+Es decir, la muestra 3 pertenece al grupo 1, mientras que las cinco restantes pertenecen al grupo 2.  
+
+Ba	Pb	F
+180	30	0.9598
+380	20	0.7734
+630	90	-2.1623
+80	10	1.872
+170	10	1.6407
+20	0	2.3538
+
+
+# Visualization 1
+```{r}
+partimat(Group ~ Ba+Pb, data = metalicos, method = "lda", plot.matrix = T, imageplot = T, main = "Partition Plot") #image.colors = c("darkgoldenrod1","skyblue2"))
+
+partimat(Group ~ Ba+Pb, data = metalicos, method = "qda", plot.matrix = T, imageplot = T, main = "Partition Plot") #image.colors = c("darkgoldenrod1","skyblue2"),)
+```
+
+LDA es un método mucho menos flexible que QDA y sufre de menos varianza. Ello puede suponer una mejora en la predicción, pero hay un inconveniente: si la asunción del LDA de que todas las clases comparten la misma matriz de covarianza no es correcta en realidad, el LDA puede sufrir un alto bias o sesgo. Visto de otra manera, LDA suele ser mejor que QDA si contamos con relativamente pocas observaciones de entrenamiento y reducir la varianza es importante. Por el contrario, se recomienda QDA si el set de observaciones de entrenamiento es muy grande y la varianza del clasificador no supone un problema, o si el supuesto de una matriz de covarianza común entre las clases claramente no se cumple.  
+
+     Si el verdadero límite de Bayes es lineal, LDA será una aproximación más precisa que QDA. Si por el contrario no es lineal, QDA será una mejor opción.  
+     
+
+# Visualization 2
+```{r}
+# decisionplot function
+# source: http://michael.hahsler.net/SMU/EMIS7332/R/viz_classifier.html
+
+decisionplot <- function(model, data, class = NULL, predict_type = "class",
+  resolution = 100, showgrid = TRUE, ...) {
+
+  if(!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,1:2]
+  k <- length(unique(cl))
+
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+
+  # make grid
+  r <- sapply(data, range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+
+  ### guess how to get class labels from predict
+  ### (unfortunately not very consistent between models)
+  p <- predict(model, g, type = predict_type)
+  if(is.list(p)) p <- p$class
+  p <- as.factor(p)
+
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(xs, ys, z, add = TRUE, drawlabels = FALSE,
+    lwd = 2, levels = (1:(k-1))+.5)
+
+  invisible(z)
+}
+
+
+# Data Subset
+rain_df.sub <- subset(metalicos, select=c(Ba, Pb, Group))
+
+# Plot XY
+plot(rain_df.sub[, 1:2], col = rain_df.sub[, 3], main = "Scatterplot")
+
+
+fit.lda.boundary <- lda(formula = group ~ Ba+Pb, data = X)
+decisionplot(fit.lda.boundary, rain_df.sub, class = "Group", main = "LDA")
+```
+
+
+# Logistic Regression
+```{r}
+model.lr <- glm(formula = Group ~ Ba+Pb, data = metalicos, family = binomial(link='logit'))
+class(model.lr) <- c("lr", class(model.lr))
+predict.lr <- function(object, newdata, ...)
+  predict.glm(object, newdata, type = "response") > .5
+
+decisionplot(model.lr, rain_df.sub, class = "Group", main = "Logistic Regression")
+```
+
+
+## Help
+https://web.ua.es/es/lpa/docencia/analisis-estadistico-de-datos-geoquimicos-con-r/analisis-discriminante.html
+https://rstudio-pubs-static.s3.amazonaws.com/277311_5cb3270d086b41aa92e4a7aa750dba54.html
+https://little-book-of-r-for-multivariate-analysis.readthedocs.io/en/latest/src/multivariateanalysis.html
+http://michael.hahsler.net/SMU/EMIS7332/R/viz_classifier.html#linear-discriminant-analysis
+https://rpubs.com/Cristina_Gil

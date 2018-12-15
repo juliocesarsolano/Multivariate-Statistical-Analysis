@@ -1,0 +1,261 @@
+---
+title: "Analisis de Regresion Multiple"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Sep 07, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(31451)
+```
+
+
+# Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+require(ggplot2)
+require(dplyr)
+require(summarytools)          # descr and dfSummary functions
+require(PerformanceAnalytics)  # chart.Correlation function
+require(rgl)                   # plot3d, surface3d functions, exercise 10
+require(rglwidget)             # including a 3D plot, exercise 10
+library(DAAG)                  # vif function
+library(kableExtra)
+
+
+# Organizing Packge information for table
+packages <- c("ggplot2", "dplyr", "summarytools", "PerformanceAnalytics", "rgl", "rglwidget", "DAAG", "kableExtra")
+display <- c("Package","Title", "Maintainer", "Version", "URL")
+table <- matrix(NA, 1, NROW(display), dimnames = list(1, display))
+for(i in 1:NROW(packages)){
+list <- packageDescription(packages[i])
+table <- rbind(table, matrix(unlist(list[c(display)]), 1, NROW(display), byrow = T))
+}
+table[,NROW(display)] <- stringr::str_extract(table[,NROW(display)], ".+,")
+
+# Table of packages
+kable(table[-1,], format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Problem Definition
+En los siguientes ejercicios vamos a cubrir el análisis de regresion multiple en R. Utilizaremos el set de datos state.x77, disponible en R: help("state.x77"). Es un Conjunto de datos relacionados con los 50 estados de los Estados Unidos de America. Ajustaremos varios modelos, calcularemos los intervalos de confianza para los coeficientes, realizaremos predicciones, evaluaremos la exactitud y error del modelo de regresion, realizaremos graficos 3D de nuestro modelo.
+
+
+# Exercise 1: Data Source
+
+VARIABLES DESCRIPTION:
+**Population**:
+population estimate as of July 1, 1975
+
+**Income**:
+per capita income (1974)
+
+**Illiteracy**:
+Analfabetismo (1970, percent of population)
+
+**Life Exp**:
+life expectancy in years (1969–71)
+
+**Murder**:
+Asesinato y tasa de homicidio no negligente por cada 100.000 habitantes (1976)
+
+**HS Grad**:
+percent high-school graduates (1970)
+
+**Frost**:
+mean number of days with minimum temperature below freezing (1931–1960) in capital or large city
+
+**Area**:
+land area in square miles
+
+```{r, e1, warning=FALSE, message=FALSE}
+# a.
+data(state.x77)
+
+# b.
+state77 <- as.data.frame(state.x77)
+
+# c.
+names(state77)[4] <- "Life.Exp"
+names(state77)[6] <- "HS.Grad"
+
+# d.
+names(state77)
+head(state77, 10)
+print(dfSummary(state77, graph.magnif = 0.75), method = "render")
+```
+
+
+# Exercise 2: Deteccion y Eliminacion de Outliers
+Se utiliza el metodo de las distancias Cook's. La distancia de Cook mide la influencia de cada observación al excluir puntos al ajustar un modelo. En general, distancias Cook's mayores que 3 veces la media pueden influenciar significativamente el modelo.
+```{r, e2, warning=FALSE, message=FALSE}
+out.model <- lm(Life.Exp ~ ., data = state77)
+cooksd <- cooks.distance(out.model)
+cooksd
+
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks Distance")  # plot cook's distance
+abline(h = 3*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+# add labels
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>3*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  
+
+# Observations
+influential.obs <- names(cooksd)[(cooksd > 3*mean(cooksd, na.rm=T))]  # influential row names
+influential.obs
+head(state77[influential.obs, ])  # influential observations (rows)
+```   
+
+Se detectan 2 observaciones con distancias Cook's mayores que 3 veces la media: "**Alaska**" and "**Hawaii**". Las variables Area y Frost en estas observaciones pueden estar influenciando. Estas observaciones no corresponden a datos aberrantes, por lo tanto se mantienen durante el análisis.
+
+
+# Exercise 3: Analisis de la Variabilidad de las Variables (Removing Zero Covariates) 
+Se usa la función nearZeroVar() del paquete caret para buscar las variables que tengan “varianza casi cero”, aquellas que entre las dos categorías más numerosas tengan una relación de 90/10 y que tengan menos de 10 valores únicos. Dado que no hay ninguna con NZV=0, todas son utilizadas en el analisis. 
+```{r, e3, warning=FALSE, message=FALSE}
+library(caret)
+nzv = nearZeroVar(state77, freqCut = 90/10, uniqueCut = 10, saveMetrics = TRUE)
+nzv
+```
+
+No hay variables para eliminar.
+
+
+# Exercise 4: Correlation Matrix y Multicolinealidad
+```{r, e4, warning=FALSE, message=FALSE}
+tiff(file = "Matriz_de_Correlacion_State77.png", width=960, height=960, bg="white")
+chart.Correlation(state77, histogram=TRUE, pch="*", method = c("spearman"))
+dev.off()
+
+chart.Correlation(state77, histogram=TRUE, pch="*", method = c("spearman"))
+
+# Multicolinealidad
+vif(out.model)
+```
+
+
+Factor de Inflación de la Varianza (VIF):  
+* VIF (Variance Inflation Factor) = 1: ausencia total de colinealidad.  
+* 1 < VIF < 5: la regresión puede verse afectada por cierta colinealidad.  
+* 5 < VIF < 10: causa de preocupación!
+
+
+# Exercise 5: Model 1
+```{r, e5, warning=FALSE, message=FALSE}
+model1 <- lm(Life.Exp ~ ., data = state77)     # the '.' means 'all' 
+summary(model1)
+```
+
+
+# Exercise 6: Model 2
+```{r, e6, warning=FALSE, message=FALSE}
+model2 <- update(model1, . ~ . -Income -Illiteracy -Area)
+summary(model2)
+```
+
+
+# Exercise 7: Model 3
+```{r, e7, warning=FALSE, message=FALSE}
+model3 <- lm(Life.Exp ~ HS.Grad + Murder, data = state77)
+summary(model3)
+
+par(mfrow=c(2,2))
+plot(model3)
+```
+
+
+# Exercise 8: Model 4, 5, 6
+```{r, e8, warning=FALSE, message=FALSE}
+model4  <-  lm(Life.Exp ~ HS.Grad+Murder + HS.Grad:Murder, data = state77)
+summary(model4)
+
+model5  <-  lm(Life.Exp ~ HS.Grad*Murder, data = state77)
+summary(model5)
+
+model6  <-  lm(Life.Exp ~ (HS.Grad+Murder)^2, data = state77)
+summary(model6)
+```
+
+
+# Exercise 9: Confidence Intervals
+```{r, e9, warning=FALSE, message=FALSE}
+confint(model3, level=0.95)
+```
+
+
+# Exercise 10: Predict
+```{r, e10, warning=FALSE, message=FALSE}
+predict(model3, data.frame(HS.Grad=55, Murder=8))
+```
+
+
+# Exercise 11: Predict (Confidence)
+Los intervalos pueden incluir la incertidumbre sobre los coeficientes estimados (**confidence**), la varianza ("noise") en las observaciones, o ambos (**predicción**). Por lo tanto, un intervalo de predicción siempre es más amplio que un intervalo de confianza. Una es la predicción de una observación futura, y la otra es una predicción de la respuesta media.
+```{r, e11, warning=FALSE, message=FALSE}
+predict(model3, data.frame(HS.Grad=55, Murder=8), interval = "confidence", level=0.95)
+```
+
+
+# Exercise 12: Predict (Prediction)
+Los intervalos pueden incluir la incertidumbre sobre los coeficientes estimados (**confidence**), la varianza ("noise") en las observaciones, o ambos (**predicción**). Por lo tanto, un intervalo de predicción siempre es más amplio que un intervalo de confianza. Una es la predicción de una observación futura, y la otra es una predicción de la respuesta media.
+```{r, e12, warning=FALSE, message=FALSE}
+predict(model3, data.frame(HS.Grad=55, Murder=8), interval = "prediction", level=0.95)
+```
+
+
+# Exercise 13: Plot 
+```{r, e13, warning=FALSE, message=FALSE}
+plotdat <- expand.grid(HS.Grad = seq(34, 70, by=2), Murder = seq(1, 16, by=1)) 
+plotdat$pred1 <- predict(model3, newdata = plotdat)
+
+with(state77, plot3d(HS.Grad, Murder, Life.Exp,	col="blue", size=1, type="s"))
+with(plotdat, surface3d(unique(HS.Grad), unique(Murder), pred1, alpha=0.5, front="line", back="line"))
+
+rglwidget(height = 1000, width = 1000)
+```
+
+
+# Exercise 14: Stepwise
+```{r, e14, warning=FALSE, message=FALSE}
+reducedModel <- step(model1, direction = "both") # Stepwise method, doble o mixto
+summary(reducedModel)
+```
+
+
+# Exercise 15: k-fold Cross Validation
+Nota: dado que el set datos contiene pocas observaciones no se recomienda partirlo en train y test set. Se sugiere utilizar la metodologia K-fold Cross Validation.
+
+Por tanto, es importante probar rigurosamente el rendimiento del modelo tanto como sea posible. Una forma es asegurarse de que la ecuación del modelo que se propone tiene funcione bien, cuando se 'construye' en un subconjunto diferente de datos de entrenamiento y se predice con los datos restantes.  
+
+Para hacer esto vamos a dividir los datos de entrada en 'k' porciones de muestras aleatorias mutuamente excluyentes. Manteniendo cada porción como datos de prueba, construimos el modelo final sugerido sobre los datos restantes (parte k-1) y calculamos el error cuadrático medio de las predicciones (MSE). Esto se hace para cada una de las porciones de muestra aleatoria 'k'. Luego, finalmente, se calcula el promedio de estos errores cuadráticos medios (para las porciones 'k'), y su equivalente RMSE (Root Mean Square Error or Deviation).    
+
+Al hacer esto, debemos verificar dos cosas:  
+
+=> Si la precisión de predicción del modelo no varía demasiado para una muestra en particular, y  
+=> Si las líneas de mejor ajuste no varían demasiado con respecto a la pendiente y el nivel.  
+
+```{r, kfold, warning=FALSE, message=FALSE}
+library(DAAG)
+# Performs the CV
+cvResults <- suppressWarnings(CVlm(data=na.omit(state77),
+                                   form.lm=Life.Exp ~ Population + Murder + HS.Grad + Frost, 
+                                   m=3, 
+                                   dots=FALSE, 
+                                   seed=29, 
+                                   legend.pos="topleft",
+                                   printit=FALSE,
+                                   main="k- Fold Cross Validation"))  
+
+sqrt(attr(cvResults, 'ms')) # Root Mean Squared Error - RMSE (Error rate)
+cvResults
+```
+
+Los resultados de la validacion cruzada utilizando 3 porciones de muestras mutuamente excluyentes, revelan que, el modelo propuesto presenta una baja desviacion o dispersion de los datos en la prediccion, con un RMSE de `r toString(round(sqrt(attr(cvResults, 'ms')), digits = 1))` años; que es bastante bueno.

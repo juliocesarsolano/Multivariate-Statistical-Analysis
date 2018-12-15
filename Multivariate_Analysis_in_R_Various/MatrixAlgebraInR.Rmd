@@ -1,0 +1,1017 @@
+---
+title: "Matrix Algebra with R"
+author: "W. Joel Schneider"
+date: "Multivariate Analysis (Psychology 444)"
+output:
+  slidy_presentation:
+    widescreen: yes
+    incremental: no
+    #css: slidy.css
+    footer: <a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+---
+
+```{r Setup, include=FALSE}
+library(rgl)
+library(knitr)
+library(magrittr)
+rgl::setupKnitr()
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+
+options(digits = 2)
+bmatrix <- function(A, digits = 2) {
+B <- paste0("\\begin{bmatrix}\n",
+         paste0(apply(formatC(A, 
+                              digits = digits,
+                              format = "f"), 
+                      MARGIN = 1, 
+                      FUN = paste0, 
+                      collapse = " & "),
+                collapse = "\\\\\n"),
+         "\n\\end{bmatrix}")
+B
+  }
+```
+
+
+# Vectors
+
+A **vector** is a series of numbers in a particular order
+
+$$\mathbf{a}=\{a_1,a_2,a_3,...,a_k\}$$
+
+For example,
+
+$$\mathbf{a}=\{8,3,-5,17\}$$
+
+In R, use the `c` function to make a vector.
+
+```{r Vectors}
+a <- c(8,3,-5,17)
+```
+
+# You Try
+
+Make a vector `p10` of the prime numbers under 10.
+
+# Matrix
+
+A **matrix** is a series of numbers arranged in rows and columns.
+
+$$\mathbf{A}_{j \times k} =
+ \begin{bmatrix}
+  a_{1,1} & a_{1,2} & \cdots & a_{1,k} \\
+  a_{2,1} & a_{2,2} & \cdots & a_{2,k} \\
+  \vdots  & \vdots  & \ddots & \vdots  \\
+  a_{j,1} & a_{j,2} & \cdots & a_{j,k}
+ \end{bmatrix}$$
+
+For example, 
+
+$$\mathbf{A} =
+ \begin{bmatrix}
+  1&2&3&4\\
+  5&6&7&8\\
+  9&10&11&12
+ \end{bmatrix}$$
+
+# Making Matrices in R {.SectionSlide}
+
+# `rbind` (Row Bind)
+
+To make a matrix in R, there are many possibilities. I could create several row vectors and bind them together with the `rbind` function like so:
+
+```{r RowMatrix}
+R1 <- 1:4 
+R2 <- 5:8 
+R3 <- 9:12
+A <- rbind(R1,R2,R3)
+A
+```
+
+# `cbind` (Column Bind)
+
+Although it looks strange to do so, I could make several column vectors and bind them together with the `cbind` function. 
+
+```{r ColMatrix}
+C1 <- c(1,5,9)
+C2 <- c(2,6,10)
+C3 <- c(3,7,11)
+C4 <- c(4,8,12)
+A <- cbind(C1, C2, C3, C4)
+A
+```
+
+# `matrix` function
+
+I could make a single vector and then use the `matrix` function to give it rows and columns. In most cases, I need only specify the row number or the column number, not both. By default, the `matrix` function assumes you are working with column vectors. 
+
+```{r MatrixR}
+A <- matrix(c(1,5,9,
+              2,6,10,
+              3,7,11,
+              4,8,12),ncol = 4)
+A
+```
+
+I find this confusing because vectors look like rows when working with code. Therefore I set the `byrow` parameter to `TRUE` and arrange the vector as if it had rows:
+
+```{r MatrixC}
+A <- matrix(c(1,2,3,4,
+              5,6,7,8,
+              9,10,11,12),
+            nrow = 3,
+            byrow = TRUE)
+A
+```
+
+# You Try
+
+Make vector `p10` into a 2 by 2 matrix like so:
+
+$$\begin{bmatrix}
+  2&3\\
+  5&7
+ \end{bmatrix}$$
+
+# Appending Matrices
+
+$$\mathbf{A}=\begin{bmatrix}
+1 & 2 & 3 & 4 \\ 
+5 & 6 & 7 & 8 \\ 
+9 & 10 & 11 & 12
+\end{bmatrix}, \mathbf{B}=\begin{bmatrix}
+13 & 14 & 15 & 16 \\ 
+17 & 18 & 19 & 20
+\end{bmatrix}$$
+
+The equation below means, "Make a new matrix called C by appending B to the bottom of A."
+
+$$\mathbf{C}=\begin{bmatrix}
+\mathbf{A} \\ \mathbf{B} 
+\end{bmatrix}=
+\begin{bmatrix}
+1 & 2 & 3 & 4 \\ 
+5 & 6 & 7 & 8 \\ 
+9 & 10 & 11 & 12\\
+13 & 14 & 15 & 16 \\ 
+17 & 18 & 19 & 20
+\end{bmatrix}$$
+
+In R, adding new rows to a matrix is done with the `rbind` function. Matrices must have the same number of columns to be compatible.
+
+```{r,echo=-4}
+A <- matrix(1:12, nrow = 3, byrow = TRUE)
+B <- matrix(13:20, nrow = 2, byrow = TRUE)
+C <- rbind(A,B)
+C
+```
+
+The `cbind` function works the same way but it appends columns to the right of a matrix. Matrices must have the same number of rows to be compatible.
+
+# You Try
+
+Make a 2 by 2 matrix `p20` of prime numbers greater than 10 but less than 20.
+
+$$\begin{bmatrix}
+  11&13\\
+  17&19
+ \end{bmatrix}$$
+ 
+Now append p10 and p20 with `rbind` like so:
+ 
+$$\begin{bmatrix}
+  2&3\\
+  5&7\\
+  11&13\\
+  17&19
+ \end{bmatrix}$$
+ 
+Now use `cbind` to make this:
+
+$$\begin{bmatrix}
+  2&3&11&13\\
+  5&7&17&19
+ \end{bmatrix}$$
+
+# Selecting parts of a matrix {.SectionSlide}
+
+$$\mathbf{A} =
+ \begin{bmatrix}
+  1&2&3&4\\
+  5&6&7&8\\
+  9&10&11&12
+ \end{bmatrix}$$
+
+# Select a single element
+
+To select a single element of a matrix, specify the row and column in brackets after the  matrix. For example, the element $\mathbf{A}_{3,2}$ (i.e., the 3^rd^ row and 2^nd^ column of $\mathbf{A}$) is 
+
+```{r}
+A[3,2]
+```
+
+# Select a whole row
+
+Leaving one of the slots in the bracket empty means that you want all of the elements in that row or column. 
+
+$\mathbf{A}_{1\bullet}$ is the 1^st^ row of $\mathbf{A}$.
+
+```{r}
+A[1,]
+```
+
+# Select a whole column
+
+$\mathbf{A}_{\bullet 3}$ is the 3^rd^ column of $\mathbf{A}$.
+
+```{r}
+A[,3]
+```
+
+By default, whenever a single row, column, or element is returned from a matrix, R drops the row and column dimensions. If you wish to preserve the result in matrix form, set `drop`  to `FALSE`:
+
+```{r}
+A[,3,drop = FALSE]
+```
+
+# Select several columns or rows
+
+A vector of integers will select whichever rows or columns you wish. Here are the 2^nd^ and 3^rd^ rows:
+
+```{r}
+A[2:3,]
+```
+
+Here are the 1^st^ and 4^th^ columns:
+
+```{r}
+A[,c(1,4)]
+```
+
+# Selecting with Boolean vectors
+
+Here is the first two rows of $\mathbf{A}$:
+
+```{r}
+A[c(TRUE,TRUE,FALSE),]
+```
+
+This seems like a strange way to do this but it is actually quite powerful. Any vector of `TRUE` and `FALSE` values can be used to select things. For example, select a column only if its first value is greater than 2:
+
+```{r}
+s <- A[1,] > 2 # Creates a vector that tests whether the first row elements are greater than 2
+A[,s] # Select only the columns whose first value is greater than 2
+```
+
+# Selecting with Name vectors
+
+We can give row and column names to a matrix like so:
+
+```{r}
+rownames(A) <- c("Gold","Sliver","Bronze")
+colnames(A) <- c("Vault","Uneven Bars","Balance Beam","Floor")
+A
+```
+
+Now we can select rows and columns by names:
+
+```{r}
+A[c("Gold","Bronze"),]
+```
+
+# You Try
+
+```{r, results='asis', echo=seq(1,5,2)}
+A <- matrix(c(
+  15,9,6,19, 
+	20,11,20,18, 
+	15,3,8,5), 
+  nrow = 3, byrow = TRUE)
+cat("$$\\mathbf{A} = ",bmatrix(A),"$$")
+B <- matrix(c(
+  17,14,1,19, 
+	11,2,12,14, 
+	5,16,1,20), 
+  nrow = 3, byrow = TRUE)
+cat("$$\\mathbf{B} = ",bmatrix(B),"$$")
+C <- matrix(c(
+  5,16,20, 
+	9,9,12, 
+	15,5,8, 
+	12,8,17), nrow = 4, byrow = TRUE)
+cat("$$\\mathbf{C} = ",bmatrix(C),"$$")
+```
+
+1. $\begin{bmatrix}\mathbf{A}\\\mathbf{B}\end{bmatrix}=$
+1. $\mathbf{A}_{\bullet 3}=$ 
+1. $\mathbf{B}_{3, 2}=$ 
+1. Rows 2 and 4 of $\mathbf{C}=$ 
+1. Columns of $\mathbf{C}$ if the first value is greater than 10.
+
+# Replace portions of a matrix
+
+Any portion of a matrix can be replaced with new values. For example, this will replace the first row with zeros:
+
+```{r, echo=1}
+A[1,] <- c(0,0,0,0)
+A
+```
+
+# Transpose Matrix
+
+To *transpose* a matrix is to flip its rows into columns.
+
+$\mathbf{A}'$ is matrix $\mathbf{A}$ transposed.
+
+If
+
+$$\mathbf{A}=\begin{bmatrix}
+1&2&3\\
+4&5&6
+\end{bmatrix}$$
+
+Then 
+
+$$\mathbf{A}'=\begin{bmatrix}
+1&4\\
+2&5\\
+3&6
+\end{bmatrix}$$
+
+## Transposing in R
+
+In R the `t` function transposes matrices.
+
+```{r Transpose,echo=c(1,3)}
+A <- matrix(1:6, nrow = 2, byrow = TRUE)
+A
+tA <- t(A)
+tA
+```
+
+# You Try
+
+Make a 2 $\times$ 5 matrix of even numbers up to 20. Then transpose it.
+Replace the last row with zeroes.
+
+# Square Matrices
+
+In a **square matrix**, the number of rows is equal to the number of columns.
+
+# Symmetric Matrices
+
+A **symmetric matrix** is a square matrix that is equal to its transponse
+
+$$\mathbf{A}=\mathbf{A}'$$
+
+This means that for all elements, $a_{ij}=a_{ji}$.
+
+Here is an example of a symmetric matrix:
+
+$$\begin{bmatrix}
+\color{green}a & \color{red}b & \color{blue}c\\
+\color{red}b & \color{gold}d & \color{purple}e\\
+\color{blue}c & \color{purple}e & \color{orange}f
+\end{bmatrix}$$
+
+To verify that a matrix is symmetric in R:
+
+```{r symmetrictest, eval=FALSE}
+A == t(A)
+```
+
+Correlation matrices and covariance matrices are always symmetric.
+
+# Diagonal matrices
+
+A **diagonal matrix** is a square matrix consisting of zeroes everywhere except the diagonal. For example,
+
+$$\mathbf{A} = \begin{bmatrix}
+a & 0 & 0\\
+0 & b & 0\\
+0 & 0 & c
+\end{bmatrix}$$
+
+To create a diagonal matrix, specify the diagonal vector and then insert it into the `diag` function like so:
+
+```{r MakeDiagonal,echo=-3}
+d <- 1:4
+A <- diag(d)
+A
+```
+
+As we will see later, the `diag` function actually has several different purposes:
+
+1. It creates a diagonal matrix $\mathbf{A}$ from a vector $\mathbf{a}$.  
+    `A <- diag(a)` 
+2. It extracts a diagonal vector $\mathbf{a}$ from a matrix $\mathbf{A}$. 
+    `a <- diag(A)`
+3. It creates an identity matrix $\mathbf{I}$ from a positive integer $n$.  
+    `I <- diag(n)`
+4. It replaces the diagonal of matrix $\mathbf{A}$ with a new vector $\mathbf{b}$.  
+    `diag(A) <- b`
+
+# Adding Matrices
+
+In order to add matrices, they must be *compatible*, meaning that they must have same number of rows and columns.
+
+To add compatible matrices, simply add elements in the same position.
+$$\begin{aligned}\mathbf{A}+\mathbf{B}&=
+\begin{bmatrix}
+a_{11} & a_{12}\\
+a_{21} & a_{22}\\
+a_{31} & a_{32}
+\end{bmatrix}+
+\begin{bmatrix}
+b_{11} & b_{12}\\
+b_{21} & b_{22}\\
+b_{31} & b_{32}
+\end{bmatrix}\\ &=
+\begin{bmatrix}
+a_{11}+b_{11} & a_{12}+b_{12}\\
+a_{21}+b_{21} & a_{22}+b_{22}\\
+a_{31}+b_{31} & a_{32}+b_{32}
+\end{bmatrix}
+\end{aligned}
+$$
+
+# Subtracting Matrices
+
+Subtracting matrices works the same way.
+
+$$\begin{aligned}\mathbf{A}-\mathbf{B}&=
+\begin{bmatrix}
+a_{11} & a_{12}\\
+a_{21} & a_{22}\\
+a_{31} & a_{32}
+\end{bmatrix}-
+\begin{bmatrix}
+b_{11} & b_{12}\\
+b_{21} & b_{22}\\
+b_{31} & b_{32}
+\end{bmatrix}\\ &=
+\begin{bmatrix}
+a_{11}-b_{11} & a_{12}-b_{12}\\
+a_{21}-b_{21} & a_{22}-b_{22}\\
+a_{31}-b_{31} & a_{32}-b_{32}
+\end{bmatrix}
+\end{aligned}
+$$
+
+# Adding and Subtracting Matrices in R
+
+```{r AddingSubtracting,echo=seq(1,7,2)}
+A <- matrix(1:6,nrow = 2)
+A
+B <- matrix(seq(10,60,10),nrow = 2)
+B
+APlusB <- A + B
+APlusB
+AMinusB <- A - B
+AMinusB
+```
+
+# Scalar-Matrix Multiplication
+
+A *scalar* is a single number, not in a matrix. You can multiply a scalar by a matrix like so:
+
+$$k\mathbf{A}=
+k\begin{bmatrix}
+a_{11} & a_{12} & a_{13}\\
+a_{21} & a_{22} & a_{23}
+\end{bmatrix}=
+\begin{bmatrix}
+ka_{11} & ka_{12} & ka_{13}\\
+ka_{21} & ka_{22} & ka_{23}
+\end{bmatrix}$$
+
+# Scalar-Matrix Multiplication in R
+
+```{r ScalarMatrix,echo=c(1,2,4)}
+k <- 10
+A <- matrix(1:6,nrow = 2)
+A
+kA <- k * A
+kA
+```
+
+# Matrix Multiplication
+
+Matrix multiplication is considerably more complex than matrix addition and subtraction. It took me an embarrassingly long time for me to wrap my head around it. I will state things in the abstract first but it is hard to see what is going on until you see a concrete example.
+
+In order for matrices to be compatible for multiplication, the number of columns of the left matrix must be the same as the number of rows of the right matrix. The product of **A **and **B** will have the the same number of rows as **A** and the same number of columns as **B**.
+
+$$\mathbf{A}_{n\times m} \mathbf{B}_{m\times p} = \mathbf{C}_{n\times p}$$
+
+Element $c_{ij}$ of $\mathbf{C}$ is calculated by multiplying row $i$ of $\mathbf{A}$ and column $j$ of $\mathbf{B}$. That is,
+
+$$c_{ij}=\mathbf{A}_{i\bullet}\mathbf{B}_{\bullet j}$$
+
+[This schematic](http://commons.wikimedia.org/wiki/File:Matrix_multiplication_diagram.svg) gives a nice visual summary:
+
+![Matrix Multiplication](http://upload.wikimedia.org/wikipedia/commons/1/11/Matrix_multiplication_diagram.svg)
+
+
+In regular multiplication, the order of the variables does not matter: $ab=ba$. 
+
+However, with matrix multiplication, this is not usually true: $\mathbf{AB\ne BA}$. Thus, the order of matrix multiplication matters.
+
+$\mathbf{AB}$ means that $\mathbf{B}$ is *pre-multiplied* by $\mathbf{A}$.
+
+$\mathbf{BA}$ means that $\mathbf{B}$ is *post-multiplied* by $\mathbf{A}$.
+
+## Matrix Multiplication Example
+
+$$\mathbf{A}=\begin{bmatrix}
+\color{red}a&\color{red}b&\color{red}c\\
+\color{blue}e&\color{blue}d&\color{blue}f
+\end{bmatrix}$$
+
+$$\mathbf{B}=\begin{bmatrix}
+\color{green}g&\color{purple}h\\
+\color{green}i&\color{purple}j\\
+\color{green}k&\color{purple}l
+\end{bmatrix}$$
+
+$$\mathbf{AB}=\begin{bmatrix}
+\color{red}a\color{green}g+\color{red}b\color{green}i+\color{red}c\color{green}k&\color{red}a\color{purple}h+\color{red}b\color{purple}j+\color{red}c\color{purple}l\\
+\color{blue}e\color{green}g+\color{blue}d\color{green}i+\color{blue}f\color{green}k&\color{blue}e\color{purple}h+\color{blue}d\color{purple}j+\color{blue}f\color{purple}l
+\end{bmatrix}$$
+
+
+# Matrix Multiplication Example
+
+$$\mathbf{A}=\begin{bmatrix}
+\color{red}1&\color{red}2&\color{red}3\\
+\color{blue}4&\color{blue}5&\color{blue}6
+\end{bmatrix}$$
+
+$$\mathbf{B}=\begin{bmatrix}
+\color{green}{10}&\color{purple}{40}\\
+\color{green}{20}&\color{purple}{50}\\
+\color{green}{30}&\color{purple}{60}
+\end{bmatrix}$$
+
+$$\mathbf{AB}=\begin{bmatrix}
+\color{red}1\cdot\color{green}{10}+\color{red}2\cdot\color{green}{20}+\color{red}3\cdot\color{green}{30}&\color{red}1\cdot\color{purple}{40}+\color{red}2\cdot\color{purple}{50}+\color{red}3\cdot\color{purple}{60}\\
+\color{blue}4\cdot\color{green}{10}+\color{blue}5\cdot\color{green}{20}+\color{blue}6\cdot\color{green}{30}&\color{blue}4\cdot\color{purple}{40}+\color{blue}5\cdot\color{purple}{50}+\color{blue}6\cdot\color{purple}{60}
+\end{bmatrix}$$
+
+$$\mathbf{AB}=\begin{bmatrix}
+140&320\\
+320&770
+\end{bmatrix}$$
+
+# Matrix Multiplication in R
+
+The `%*%` operator multiplies matrices (and the inner products of vectors).
+
+```{r MMinR,echo=seq(1,5,2)}
+A <- matrix(1:6,nrow = 2,byrow = TRUE)
+A
+B <- matrix(seq(10,60,10),nrow = 3)
+B
+C <- A %*% B
+C
+```
+
+
+# Elementwise Matrix Multiplication
+
+Elementwise matrix multiplication is when we simply multiply corresponding elements of identically-sized matrices. This is sometimes called the *Hadamard product*.
+
+$$\begin{aligned}A\circ B&=\begin{bmatrix} a_{11} & a_{12} & a_{13}\\ 
+a_{21} & a_{22} & a_{23} 
+\end{bmatrix} \circ 
+\begin{bmatrix} 
+b_{11} & b_{12} & b_{13}\\ 
+b_{21} & b_{22} & b_{23}
+\end{bmatrix}\\ 
+&= \begin{bmatrix} 
+a_{11}\, b_{11} & a_{12}\, b_{12} & a_{13}\, b_{13}\\ 
+a_{21}\, b_{21} & a_{22}\, b_{22} & a_{23}\, b_{23}
+\end{bmatrix}\end{aligned}$$
+
+In R, elementwise multiplication is quite easy.
+
+```{r ElementwiseMultiplication,eval=FALSE}
+C <- A * B
+```
+
+Elementwise division works the same way.
+
+```{r ElementwiseDivision,eval=FALSE}
+C <- A / B
+```
+
+# You Try
+
+```{r, results='asis', echo=FALSE}
+A <- matrix(c(
+  15,9,6,19, 
+	20,11,20,18, 
+	15,3,8,5), 
+  nrow = 3, byrow = TRUE)
+cat("$$\\mathbf{A} = ",bmatrix(A, 0),"$$")
+B <- matrix(c(
+  17,14,1,19, 
+	11,2,12,14, 
+	5,16,1,20), 
+  nrow = 3, byrow = TRUE)
+cat("$$\\mathbf{B} = ",bmatrix(B, 0),"$$")
+C <- matrix(c(
+  5,16,20, 
+	9,9,12, 
+	15,5,8, 
+	12,8,17), nrow = 4, byrow = TRUE)
+cat("$$\\mathbf{C} = ",bmatrix(C, 0),"$$")
+```
+
+1. $\mathbf{A+B}=$ 
+1. $\mathbf{A-B}=$
+1. $\mathbf{A\circ B}=$
+1. $\mathbf{AC}=$
+
+# Identity Elements
+
+The *identity element* for a binary operation is the value that when combined with something leaves it unchanged. For example, the additive identity is 0.
+
+$$X+0=X$$
+
+The number 0 is also the identity element for subtraction.
+
+$$X-0=X$$
+
+The multiplicative identity is 1.
+
+$$X \times 1 = X$$
+
+The number 1 is also the identity element for division and exponentiation.
+
+$$X \div 1=X$$
+
+$$X^1=X$$
+
+# Identity Matrix
+
+For matrix multiplication with square matrices, the identity element is called the *identity matrix*, $\mathbf{I}$. 
+
+$$\mathbf{AI}=\mathbf{A}$$
+
+The identity matrix is a diagonal matrix with ones on the diagonal. For example, a $2 \times 2$ identity matrix looks like this:
+
+$$\mathbf{I}_2=\begin{bmatrix}
+1 & 0\\
+0 & 1 
+\end{bmatrix}$$
+
+A size-3 identity matrix looks like this:
+
+$$\mathbf{I}_3=\begin{bmatrix}
+1 & 0 & 0\\
+0 & 1 & 0\\
+0 & 0 & 1 
+\end{bmatrix}$$
+
+It is usually not necessary to use a subscript because the size of the identity matrix is usually assumed to be the same as that of the matrix it is multiplied by.
+
+Thus, although it is true that $\mathbf{AI}=\mathbf{A}$ and $\mathbf{IA}=\mathbf{A}$, it is possible that the $\mathbf{I}$ is of different sizes in these equations, depending on the dimensions of $\mathbf{A}$.
+
+If $\mathbf{A}$  has $m$ rows and $n$ columns, in $\mathbf{AI}$, it is assumed that $\mathbf{I}$ is of size $n$ so that it is right-compatible with $\mathbf{A}$. In $\mathbf{IA}$, it is assumed that $\mathbf{I}$ is of size $m$ so that it is left-compatible with $\mathbf{A}$.  
+
+
+# The Identity Matrix in R
+
+To create an identity matrix, use the `diag` function with a single integer as its argument. For example `diag(6)` produces a 6 by 6 identity matrix.
+
+```{r,echo=1}
+I6 <- diag(6)
+I6
+```
+
+## Multiplicative Inverse
+
+$X$ multiplied by its *multiplicative inverse* yields the multiplicative identity, 1. The multiplicative inverse is also known as the *reciprocal*.
+
+$$X\times \frac{1}{X}=1$$
+
+Another way to write the reciprocal is to give it an exponent of $-1$.
+
+$$X^{-1}=\frac{1}{X}$$
+
+# Matrix Inverse
+
+Multiplying square matrix $\mathbf{A}$ by its inverse $(\mathbf{A}^{-1})$ produces the identity matrix. 
+
+$$\mathbf{A}\mathbf{A}^{-1}=\mathbf{I}$$
+
+The inverse matrix produces the identity matrix whether it is pre-multiplied or post-multiplied.
+
+$$\mathbf{A}\mathbf{A}^{-1}=\mathbf{A}^{-1}\mathbf{A}=\mathbf{I}$$
+
+The calculation of an inverse is [quite complex](http://en.wikipedia.org/wiki/Invertible_matrix#Methods_of_matrix_inversion) and is best left to computers.
+
+Only square matrices have inverses. 
+
+Actually not all square matrices have inverses. In the same way that 0 has no resciprocal ($\frac{1}{0}$ is undefined), some matrices cannot be inverted. For example, this matrix of ones has no inverse.
+
+$$\begin{bmatrix}
+1 & 1\\
+1 & 1 
+\end{bmatrix}$$
+
+There is no matrix we can multiply it by to produce the identity matrix. In the algorithm for calculating the inverse, division by 0 sometimes occurs and the whole process comes to a halt. A matrix that cannot be inverted is called a *singular matrix*. 
+
+The covariance matrix of collinear variables is singular. *Collinear* means that at least one of the variables can be perfectly predicted from the other variables.
+
+For example, if $Z=X+Y$, we cannot use $X$, $Y$, and $Z$ together as predictors in a multiple regression equation. $Z$ is perfectly predicted from $X$ and $Y$. In the calculation of the regression coefficients, division by 0 will be attempted and calculation can proceed no further. 
+
+While regression with perfectly collinear predictors is impossible, regression with almost perfectly collinear predictors can produce strange and unstable results. For example, if we round $Z$, the rounding error makes $Z$ nearly collinear with $X$ and $Y$ but not quite perfectly collinear with them. In this case, the regression will run but might give misleading results that might differ dramatically depending on how finely rounded $Z$ is.
+
+# Calculating Inverses in R
+
+You would think that the inverse function would be called "inverse" or "inv" or something like that. Unintuitively, the inverse function in R is `solve`. The reason for this is that `solve` covers a wider array of problems than just the inverse. To see how, imagine that we have two matrices of known constants $\mathbf{A}_{m\times m}$ and $\mathbf{B}_{m\times n}$. We also have a matrix of unknowns $\mathbf{X}_{m\times n}$. How do we solve this equation?
+
+$$\mathbf{AX}=\mathbf{B}$$
+
+We can pre-multiply both sides of the equation by the inverse of $\mathbf{A}$. 
+
+$$\begin{aligned}\mathbf{AX}&=\mathbf{B}\\
+\mathbf{A}^{-1}\mathbf{AX}&=\mathbf{A}^{-1}\mathbf{B}\\
+\mathbf{IX}&=\mathbf{A}^{-1}\mathbf{B}\\
+\mathbf{X}&=\mathbf{A}^{-1}\mathbf{B}\end{aligned}$$
+
+You may have encountered this kind of problem in an algebra class when you used matrices to solve systems of linear equations. For example, these equations:
+
+$$\begin{aligned}
+2x -9y -2z &= 5\\
+-2x + 5y + 3z &= 3\\
+2x + 4y - 3z &= 12
+\end{aligned}$$
+
+can be rewritten as matrices
+
+$$\begin{aligned}\mathbf{AX}&=\mathbf{B}\\
+\begin{bmatrix}
+\phantom{-}2 & -9 & -2\\
+-2 & \phantom{-}5 & \phantom{-}3\\
+\phantom{-}2 & \phantom{-}4 & -3
+\end{bmatrix}
+\begin{bmatrix}
+x  \\
+y \\
+z 
+\end{bmatrix}&=
+\begin{bmatrix}
+5  \\
+3 \\
+12 
+\end{bmatrix}
+\end{aligned}$$
+
+
+In R, problems of this sort are solved like so:
+
+`X -> solve(A,B)`
+
+```{r,echo=-4}
+A <- matrix(c(2, -9, -2,
+             -2,  5,  3,
+              2,  4, -3),
+            nrow = 3,byrow = TRUE)
+B <- matrix(c(5,3,-12),ncol = 1)
+X <- solve(A,B)
+X
+```
+
+If $\mathbf{B}$ is unspecified in the `solve` function, it is assumed that it is the identity matrix and therefore will return the inverse of $\mathbf{A}$. That is, if $\mathbf{B=I}$, then
+
+$$\begin{aligned}
+\mathbf{AX}&=\mathbf{B}\\
+\mathbf{AX}&=\mathbf{I}\\
+\mathbf{A^{-1}AX}&=\mathbf{A^{-1}I}\\
+\mathbf{IX}&=\mathbf{A^{-1}I}\\
+\mathbf{X}&=\mathbf{A^{-1}}\\
+\end{aligned}$$
+
+Thus, `solve(A)` is $\mathbf{A}^{-1}$
+
+
+```{r,echo=c(1,3,5)}
+A <- matrix(c(1,0.5,0.5,1),nrow = 2)
+A
+iA <- solve(A)
+iA
+A %*% iA
+```
+
+# You Try
+
+```{r, results='asis', echo=FALSE}
+B <- matrix(c(
+  17,14,1,19, 
+	11,2,12,14, 
+	5,16,1,20), 
+  nrow = 3, byrow = TRUE)
+cat("$$\\mathbf{B} = ",bmatrix(B, 0),"$$")
+C <- matrix(c(
+  5,16,20, 
+	9,9,12, 
+	15,5,8, 
+	12,8,17), nrow = 4, byrow = TRUE)
+cat("$$\\mathbf{C} = ",bmatrix(C, 0),"$$")
+```
+
+1. Make a 6 $\times$ % identity matrix.
+1. $\mathbf{BC}^{-1}=$
+1. $\mathbf{BC(BC)}^{-1}=$
+1. $\mathbf{(C'C)^{-1}}=$
+
+# Creating Sums with Matrices
+
+A non-bolded $1$ is just the number one.
+
+A bolded $\mathbf{1}$ is a column vector of ones. For example,
+
+$$\mathbf{1}_1=\begin{bmatrix}
+1
+\end{bmatrix},
+\mathbf{1}_2=\begin{bmatrix}
+1\\ 1
+\end{bmatrix},
+\mathbf{1}_3=\begin{bmatrix}
+1\\ 1\\ 1
+\end{bmatrix},...,
+\mathbf{1}_n=\begin{bmatrix}
+1\\ 1\\ 1\\ \vdots \\ 1
+\end{bmatrix}$$
+
+Like the identity matrix, the length of $\mathbf{1}$ is ususally inferred from context.
+
+The one vector is used to create sums. Post multiplying a matrix by $\mathbf{1}$ creates a column vector of row sums.
+
+Suppose that 
+
+$$\mathbf{X}=
+\begin{bmatrix}
+1 & 2\\
+3 & 4
+\end{bmatrix}$$
+
+
+$$\mathbf{X1}=\begin{bmatrix}
+1 & 2\\
+3 & 4
+\end{bmatrix}
+\begin{bmatrix}
+1\\ 1
+\end{bmatrix}
+=\begin{bmatrix}
+3\\ 
+7
+\end{bmatrix}
+$$
+
+Pre-multiplying by a transposed one matrix creates a row vector of column totals.
+$$\mathbf{1'X}=
+\begin{bmatrix}
+1& 1
+\end{bmatrix}
+\begin{bmatrix}
+1 & 2\\
+3 & 4
+\end{bmatrix}
+=\begin{bmatrix}
+4&6
+\end{bmatrix}
+$$
+
+Making a "one sandwich" creates the sum of the entire matrix.
+
+$$\mathbf{1'X1}=
+\begin{bmatrix}
+1& 1
+\end{bmatrix}
+\begin{bmatrix}
+1 & 2\\
+3 & 4
+\end{bmatrix}
+\begin{bmatrix}
+1\\ 1
+\end{bmatrix}
+=\begin{bmatrix}
+10
+\end{bmatrix}
+$$
+
+To create a $\mathbf{1}$ vector that is compatible with the matrix it post-multiplies, use the `ncol` function inside the `rep` function:
+
+```{r,echo=-4}
+A <- matrix(1:20,nrow = 4)
+# 1 column matrix is the default
+Ones <- matrix(rep(1,ncol(A))) 
+# With pipes this is easier to understand
+Ones <- 1 %>% rep(ncol(A)) %>% matrix
+RowSumsA <- A %*% Ones
+RowSumsA
+
+```
+
+Use the `nrow` function to make a $\mathbf{1}$ vector that is compatible with the matrix it pre-multiplies:
+
+```{r,echo=-3}
+Ones <- matrix(rep(1,nrow(A)),ncol = 1)
+ColSumsA <- t(Ones) %*% A
+ColSumsA
+```
+
+Of course, creating $\mathbf{1}$ vectors like this can be tedious. Therefore `rowSums(A)` will add the rows of $\mathbf{A}$, `colSums(A)` with give the column totals of $\mathbf{A}$, and `sum(A)` will give the overal total of $\mathbf{A}$.
+
+## Make R Matrices in Excel
+
+[No Macros (100×100 limit)](http://my.ilstu.edu/~wjschne/442/MakeMatrixInR.xlsx)
+
+[With Macro (No size limit)](http://my.ilstu.edu/~wjschne/AssessingPsyche/ExcelToRMatrix.xlsm)
+
+# Eigenvectors and Eigenvalues
+
+$$\mathbf{Ax=b}$$
+
+Square matrix $\mathbf{A}$ scales and rotates vector $\mathbf{x}$ into vector $\mathbf{b}$.
+
+Is there a non-zero vector $\mathbf{v}$ that $\mathbf{A}$ scales but does not rotate? If so, $\mathbf{v}$ is an *eigenvector*. The value $\lambda$ by which $\mathbf{v}$ is scaled is the *eigenvalue*.
+
+$$\mathbf{Av}=\lambda\mathbf{v}$$
+
+Every eigenvector that exists for matrix $\mathbf{A}$, is accompanied by an infinite number of parallel vectors of varying lengths that are also eigenvectors. Thus, we focus on the unit eigenvectors and their accompanying eigenvalues.
+
+Eigenvectors and eigenvalues are extremely important concepts in a wide variety of applications in many disciplines. For us, they play a pivotal role in principal components analyses (and factor analysis), and multivariate analyses such as MANOVA.
+
+Eigenvectors (via principal components) help us rescale multivariate data into a smaller number of variables.
+
+# Eigenvectors and Eigenvalues in R
+
+The eigenvectors of correlation matrix `A` below, represent the orientation vectors of the ellipsoid that contains the multivariate normal data. The eigenvalues of `A`
+
+```{r eigen, results = "asis", echo = FALSE}
+A <- matrix(c(1.0, 0.9, 0.8,
+              0.9, 1.0, 0.7,
+              0.8, 0.7, 1.0),
+            nrow = 3)
+```
+
+$$\mathbf{A}=`r bmatrix(A, 0)`$$
+
+```{r}
+eig <- eigen(A)
+evectors <- eig$vectors
+```
+
+$$\boldsymbol{v}= `r bmatrix(evectors)`$$
+
+```{r}
+evalues <- eig$values
+```
+
+$\boldsymbol{\lambda} = \{`r paste0(round(evalues,2),collapse = ",")`\}$
+
+```{r eigenplot, webgl = TRUE, eval = T}
+plot3d(mvtnorm::rmvnorm(5000,sigma = A), col = "royalblue", axes = F, box = F, aspect = T, xlab = "", ylab = "", zlab = "", alpha = 0.6, size = 0.2)
+plot3d(ellipse3d(A,subdivide = 3, t = 1), alpha = 0.2,add = T)
+for (i in 1:3) heplots::arrow3d(-1 * (eig$values[i] ^ (.5)) * eig$vectors[,i],(eig$values[i] ^ (.5)) * eig$vectors[,i],n = 16, lwd = 2, barblen = 0 , col = "royalblue")
+
+plot3d(ellipse3d(A,subdivide = 5, t = 2), alpha = 0.1,add = T)
+
+xticks <- c(-3:-1, 1:3)
+axis3d('x', pos = c(NA, 0, 0), at = xticks)
+axis3d('y', pos = c(0, NA, 0), at = xticks)
+axis3d('z', pos = c(0, 0, NA), at = xticks)
+aspect3d(1,1,1)
+```
+
+For symmetric matrices (e.g., correlation and covariance matrices), eigenvectors are orthogonal.
+
+
+# You Try
+
+Extract the eigenvalues and eigen vectors from correlation matrix `rho`.
+
+```{r}
+rho <- matrix(c(1,0.6,0.6,1),2)
+```
+
+
+
+```{r}
+xticks <- c(-3:-1, 1:3)
+plot(ellipse::ellipse(rho, t = 1), asp = 1, ann = F, axes = F, type = "l", ylim = c(-3,3), xlim = c(-3,3))
+axis(1, pos = 0, at = xticks)
+axis(2, pos = 0, at = xticks)
+evec <- eigen(rho)$vectors
+eval <- eigen(rho)$values ^ 0.5
+shape::Arrows(0,0,evec[1,1]*eval[1],evec[2,1]*eval[1],arr.adj = 1, arr.length = 0.2)
+shape::Arrows(0,0,evec[1,2]*eval[2],evec[2,2]*eval[2],arr.adj = 1, arr.length = 0.2)
+```

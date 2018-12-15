@@ -1,0 +1,29 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1540521272376.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "CB1A0D29",
+    "lastKnownWriteTime" : 1540520761,
+    "last_content_update" : 1540521272376,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "11B05A17",
+        "caption" : "rain_df",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=rain_df&cache_key=11B05A17",
+        "displayedObservations" : 366,
+        "environment" : "",
+        "object" : "rain_df",
+        "preview" : 0,
+        "totalObservations" : 366,
+        "variables" : 11
+    },
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

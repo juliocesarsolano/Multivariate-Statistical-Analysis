@@ -1,0 +1,594 @@
+---
+title: "Canonical Correlation Analysis in R"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+params: 
+  fast: TRUE
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    highlight: kate
+    widescreen: yes
+    footer: <a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+bibliography: Loaded.bib
+csl: apa.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+ev <- T
+library(magrittr)
+library(candisc)
+library(tables)
+library(ggplot2)
+library(knitr)
+library(broom)
+library(pander)
+library(ztable)
+library(dplyr)
+
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("table.style","rmarkdown")
+panderOptions("missing","")
+pvalueAPA <- function(p, inline = FALSE, mindigits = 2, maxdigits = 3){
+   fp <- function(x){
+     if (is.na(x)) return(NA)
+      p.round <- ifelse(x > 0.5 * 10 ^ (-1 * mindigits),mindigits,maxdigits)
+  if (x > 0.5 * 10 ^ (-1 * p.round)) {
+    paste0(ifelse(inline,"$p=", ""),
+           sub(pattern = "0.", 
+               replacement = ".", 
+               formatC(x, p.round, format = "f")),
+           ifelse(inline,"$", ""))
+    } else {
+      paste0(ifelse(inline, "$p<","<"),
+             sub(pattern = "0.", 
+                 replacement =  ".",
+                 10 ^ (-1 * maxdigits)),
+             ifelse(inline,"$",""))
+    }
+  }
+  sapply(p, fp)
+}
+manovaTable <- function(m, caption = "MANOVA Table", test = "Pillai"){
+  require(broom)
+  require(pander)
+  require(dplyr)
+  testName <- switch(test,
+                     Pillai = "Pillai's Trace", 
+                     Wilks = "Wilks' $\\Lambda$",
+                     `Hotelling-Lawley` = "Hotelling-Lawley's Trace",
+                     Roy = "Roy's Largest Root")
+  m %>% manova %>% 
+    tidy(test = test) %>% 
+    mutate(p.value = pvalueAPA(p.value),
+           term = gsub(x = term, pattern = ":"," $\\\\times$ ") ) %>% 
+    set_colnames(c("Factor",
+                   "df",
+                   testName,
+                   "$F$",
+                   "$df_1$",
+                   "$df_2$",
+                   "$p$")) %>% 
+    pander(caption = caption, 
+           round = 2, 
+           split.tables = Inf, 
+           style = "rmarkdown", 
+           emphasize.rownames = FALSE, 
+           keep.trailing.zeros = TRUE, 
+           table.alignment.rownames = "left", 
+           missing = "")
+}
+manovaUnivariateTable <- function(m, caption = "Univariate Analyses"){
+  require(broom)
+  require(pander)
+  require(dplyr)
+  require(car)
+  m %>% tidy %>% 
+    mutate(response = ifelse(response == Lag(response),
+                             NA,
+                             response),
+           p.value = pvalueAPA(p.value),
+           term = gsub(x = term, pattern = ":"," $\\\\times$ "))  %>% 
+    mutate(term = gsub(x = term, pattern = "[[:punct:]]","")) %>% 
+    set_colnames(c("Outcome",
+                   "Predictor",
+                   "$b$",
+                   "$\\sigma_b$",
+                   "$t$",
+                   "$p$")) %>% 
+    pander(caption = "Univariate Analyses")
+}
+
+CanCorTable <- function(x) {
+  require(candisc)
+  require(pander)
+  require(magrittr)
+  if (class(x) != "cancor") return("Object must be of class cancor from the candisc package.")
+  k <- length(x$cancor)
+  Eigenvalue = x$cancor ^ 2 / (1 - x$cancor ^ 2)
+  EigPercent <- 100 * Eigenvalue / sum(Eigenvalue)
+  data.frame(Variate = 1:k, 
+           CanR = x$cancor, 
+           CanRSq = x$cancor ^ 2, 
+           Eigenvalue, 
+           Percent = EigPercent, 
+           CumulativePercent = cumsum(EigPercent)) %>% 
+  set_colnames(c("Variate", 
+                 "Canonical $R$",
+                 "Canonical $R^2$",
+                 "Eigenvalues",
+                 "Percent",
+                 "Cumulative Percent")) %>% 
+  pander(caption = "Canonical Correlation Analysis")
+  }
+
+CanCorTestTable <- function(x) {
+  require(candisc)
+  require(pander)
+  require(magrittr)
+  if (class(x) != "cancor") return("Object must be of class cancor from the candisc package.")
+  k <- length(x$cancor)
+  cbind(Variate = 1:k, Wilks(x)) %>% 
+    mutate(p.value = pvalueAPA(p.value)) %>%
+    set_colnames(c("Variate", 
+                   "Canonical $R$", 
+                   "Wilks $\\Lambda$", 
+                   "$F$", 
+                   "$df_1$",
+                   "$df_2$",
+                   "$p$")) %>% 
+    pander(caption = "Test of H~0~: The canonical correlations in the current row and all that follow are zero.")
+  }
+
+CanCorCoefTable <- function(x, 
+                            type = c("raw",
+                                     "standardized",
+                                     "structure"), 
+                            xNames = x$names$X, 
+                            yNames = x$names$Y, 
+                            xSet = "X", 
+                            ySet = "Y",
+                            boldthreshold = 0.3,
+                            digits = 2) {
+  require(candisc)
+  require(pander)
+  require(magrittr)
+  bolder <- function(p, 
+                     boldthreshold = boldthreshold, 
+                     digits = digits) {
+    p0 <- formatC(p,digits = digits, format = "f")
+    if (abs(p) > boldthreshold) paste0("**",p0 ,"**") else p0}
+  
+  k <- length(x$cancor)
+  XTitleRow <- matrix(rep(NA,k),nrow = 1) %>%
+    set_rownames(paste0("**",xSet,"**"))
+  YTitleRow <- matrix(rep(NA,k),nrow = 1) %>% set_rownames(paste0("**",ySet,"**"))
+if (type == "structure") {
+  xcoef <- x$structure$X.xscores %>%
+    set_rownames(xNames) %>% 
+    apply(MARGIN = c(1,2),
+          bolder, 
+          boldthreshold = boldthreshold, 
+          digits = digits)
+  ycoef <- x$structure$Y.yscores %>%
+    set_rownames(yNames) %>% 
+    apply(MARGIN = c(1,2),
+          bolder, 
+          boldthreshold = boldthreshold, 
+          digits = digits)
+  cap <- "Canonical Structure Coefficients"
+} 
+ 
+if (type == "raw") {
+  xcoef <- x$coef$X %>%
+    set_rownames(xNames)
+  ycoef <- x$coef$Y %>%
+    set_rownames(yNames)
+  cap = "Canonical Function Coefficients"
+}
+  
+if (type == "standardized") {
+  xcoef <- coef(x, 
+                type = "x", 
+                standardize = TRUE) %>% 
+    set_rownames(xNames) %>% 
+    apply(MARGIN = c(1,2), 
+          bolder, 
+          boldthreshold = boldthreshold, 
+          digits = digits)
+  ycoef <- coef(x, 
+                type = "y", 
+                standardize = TRUE) %>% 
+    set_rownames(yNames) %>% 
+    apply(MARGIN = c(1,2), 
+          bolder, 
+          boldthreshold = boldthreshold, 
+          digits = digits)
+  cap <- "Standardized Canonical Function Coefficients"
+  }
+rbind(XTitleRow,
+      xcoef,
+      YTitleRow,
+      ycoef) %>%
+  set_colnames(paste0("CV",1:k)) %>% 
+  pander(caption = cap,
+         justify = paste0("l",
+                          paste0(rep("r",k),
+                                 collapse = "")))
+  }
+```
+
+```{r MakeData, include = FALSE}
+library(lavaan)
+
+O <- paste0("O =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * O",1:5),collapse = "+"))
+C <- paste0("C =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * C",1:5),collapse = "+"))
+E <- paste0("E =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * E",1:5),collapse = "+"))
+A <- paste0("A =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * A",1:5),collapse = "+"))
+N <- paste0("N =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * N",1:5),collapse = "+"))
+
+Real <- paste0("Real =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * Real",1:5),collapse = " + "))
+Invest <- paste0("Invest =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * Invest",1:5),collapse = " + "))
+Art <- paste0("Art =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * Art",1:5),collapse = " + "))
+Soc <- paste0("Soc =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * Soc",1:5),collapse = " + "))
+Ent <- paste0("Ent =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * Ent",1:5),collapse = " + "))
+Conv <- paste0("Conv =~ ", paste0(paste0(round(runif(5,0.6,0.9),2)," * Conv",1:5),collapse = " + "))
+
+vNames <- expand.grid(c("O","C","E","A","N","Real","Invest","Art","Soc","Ent","Conv"),1:5) %>% apply(1,paste, collapse = "") 
+thresholds <- paste0(vNames,"| -1.5*t1 + -0.5*t2 + 0.5*t3 + 1.5*t4",collapse = "\n")
+m <- paste("Real ~ -0.3 * O + -0.25 * E",
+           "Invest ~ 0.6 * O",
+           "Art ~ 0.3 * O",
+           "Soc ~ 0.5 * E + 0.5 * A + -0.3 * O",
+           "Ent ~ 0.6 * E + -0.3 * A",
+           "Conv ~ -0.6 * O + -0.4 * E",
+  O,C,E,A,N,
+  Real,Invest,Art,Soc,Ent,Conv, 
+  thresholds, 
+  sep = "\n")
+d <- simulateData(model = m, sample.nobs = 500, standardized = TRUE)
+
+```
+
+
+
+# Multiple Regression
+
+```{tikz MR, engine.opts = list(convert = 'C:\\Program Files\\ImageMagick-6.9.2-Q16\\convert.exe', convert.opts = '-density 300'), echo = FALSE, eval = ev, dev = "png"}
+\usetikzlibrary{positioning}
+\usetikzlibrary{decorations.pathreplacing}
+\usetikzlibrary{decorations.text}
+\usetikzlibrary{arrows,shapes,backgrounds, shadows,fadings,trees}
+\usetikzlibrary{calc}
+\begin{tikzpicture}[scale=1,  latent/.style={ellipse, ultra thick ,draw=black,minimum width=1.5cm,minimum height=1.5cm,inner sep=0mm,font=\Large},
+error/.style={ellipse,thick, draw=black,inner sep=0mm, minimum width=0.5cm,minimum height=0.5cm,font=\Large},
+ob/.style={rectangle,draw=black, thick,inner sep=2mm, minimum width=1cm, minimum height=0.75cm, align=center, rounded corners=0.1cm,font=\Large},
+post/.style={->,draw,shorten >=2pt,shorten <=2pt,>=latex', very thick, font=\Large},
+cov/.style={<->,draw,shorten >=2pt,shorten <=2pt,>=latex', very thick, font=\Large, bend left=50},
+variance/.style={<->,  >=latex', thick, bend left=245, looseness=6,shorten >=2pt,shorten <=2pt, font=\Large},
+upvariance/.style={<->,  >=latex', thick, shorten >=2pt,shorten <=2pt, font=\Large,bend left = 115,looseness=4},
+label/.style={fill=white,circle,inner sep = 0mm,pos=0.475}]
+
+\node[latent, minimum height=1cm] (cv1) at (0,0) {$\hat{Y}$};
+\node[latent, minimum height=1cm] (cv2) [right= of cv1] {$Y$};
+\node[ob] (cv12) [left = of cv1] {$x_2$};
+\node[ob] (cv11) [above = of cv12] {$x_1$};
+\node[ob] (cv13) [below = of cv12] {$x_3$};
+\node[ob] (cv22) [right = of cv2] {$Y$};
+\path[cov] (cv1) to (cv2); 
+
+\foreach \m in {1,2,3}{
+\path[post] (cv1\m) to (cv1);
+}
+
+\path[post] (cv22) to (cv2);
+\end{tikzpicture}
+```
+
+# Canonical Correlation Analysis
+
+```{tikz CCA, engine.opts = list(convert = 'C:\\Program Files\\ImageMagick-6.9.2-Q16\\convert.exe', convert.opts = '-density 300'), echo = FALSE, eval = ev, dev = 'png'}
+\usetikzlibrary{positioning}
+\usetikzlibrary{decorations.pathreplacing}
+\usetikzlibrary{decorations.text}
+\usetikzlibrary{arrows,shapes,backgrounds, shadows,fadings,trees}
+\usetikzlibrary{calc}
+\begin{tikzpicture}[scale=1,  latent/.style={ellipse, ultra thick ,draw=black,minimum width=1.5cm,minimum height=1.5cm,inner sep=0mm,font=\Large},
+error/.style={ellipse,thick, draw=black,inner sep=0mm, minimum width=0.5cm,minimum height=0.5cm,font=\Large},
+ob/.style={rectangle,draw=black, thick,inner sep=2mm, minimum width=1cm, minimum height=0.75cm, align=center, rounded corners=0.1cm,font=\Large},
+post/.style={->,draw,shorten >=2pt,shorten <=2pt,>=latex', very thick, font=\Large},
+cov/.style={<->,draw,shorten >=2pt,shorten <=2pt,>=latex', very thick, font=\Large, bend left=50},
+variance/.style={<->,  >=latex', thick, bend left=245, looseness=6,shorten >=2pt,shorten <=2pt, font=\Large},
+upvariance/.style={<->,  >=latex', thick, shorten >=2pt,shorten <=2pt, font=\Large,bend left = 115,looseness=4},
+label/.style={fill=white,circle,inner sep = 0mm,pos=0.475}]
+
+\node[latent, minimum height=1cm] (cv1) at (0,0) {$\xi$};
+\node[latent, minimum height=1cm] (cv2) [right= of cv1] {$\eta$};
+\node[ob] (cv12) [left = of cv1] {$x_2$};
+\node[ob] (cv11) [above = of cv12] {$x_1$};
+\node[ob] (cv13) [below = of cv12] {$x_3$};
+\node[ob] (cv22) [right = of cv2] {$y_2$};
+\node[ob] (cv21) [above = of cv22] {$y_1$};
+\node[ob] (cv23) [below = of cv22] {$y_3$};
+\path[cov] (cv1) to (cv2); 
+
+\foreach \m in {1,2,3}{
+\path[post] (cv1\m) to (cv1);
+\path[post] (cv2\m) to (cv2);
+}
+\end{tikzpicture}
+```
+
++ $r_{\xi\eta}$ is the *canonical correlation*.
++ The values associated with the straight arrows are *canonical function coefficients*. These can be unstandardized or standardized.
++ The correlation between each $x$ and $\xi$ (or each $y$ and $\eta$) is a *canonical structure coefficient* (also known as a *canonical loading*).
++ The correlation of each variable with its opposite canonical variate is the *canonical cross-loading*.
+
+# Canonical Correlation Analysis
+
+```{tikz CCA2, engine.opts = list(convert = 'C:\\Program Files\\ImageMagick-6.9.2-Q16\\convert.exe', convert.opts = '-density 300'), echo = FALSE, eval = ev, dev = "png"}
+
+\usetikzlibrary{positioning}
+\usetikzlibrary{decorations.pathreplacing}
+\usetikzlibrary{decorations.text}
+\usetikzlibrary{arrows,shapes,backgrounds, shadows,fadings,trees}
+\usetikzlibrary{calc}
+\begin{tikzpicture}[scale=1,  latent/.style={ellipse, ultra thick ,draw=black,minimum width=1cm,minimum height=1cm,inner sep=0mm,font=\Large},
+error/.style={ellipse,thick, draw=black,inner sep=0mm, minimum width=0.5cm,minimum height=0.5cm,font=\Large},
+ob/.style={rectangle,draw=black, thick,inner sep=2mm, minimum width=1cm, minimum height=1cm, align=center, rounded corners=0.1cm,font=\Large},
+post/.style={->,draw,shorten >=2pt,shorten <=2pt,>=latex', very thick, font=\Large},
+cov/.style={<->,draw,shorten >=2pt,shorten <=2pt,>=latex', very thick, font=\Large, bend left=50},
+variance/.style={<->,  >=latex', thick, bend left=245, looseness=6,shorten >=2pt,shorten <=2pt, font=\Large},
+upvariance/.style={<->,  >=latex', thick, shorten >=2pt,shorten <=2pt, font=\Large,bend left = 115,looseness=4},
+label/.style={fill=white,circle,inner sep = 0mm,pos=0.475}]
+\node[ob] (x1) at (0,0) {$x_1$};
+
+
+
+\foreach \i/\j in {1/2,2/3,3/4}{
+  \node[ob] (x\j) [below = of x\i] {$x_\j$};
+  \node[ob] (y\i) [right = 8cm of $(x\i)!0.5!(x\j)$] {$y_\i$};
+}
+
+\foreach \i in {1,2,3}{
+  \node[latent] (eta\i) [left = 2cm of y\i] {$\eta_\i$};
+  \node[latent] (xi\i) [left = of eta\i] {$\xi_\i$};
+  \path[cov] (xi\i) to (eta\i);
+  \foreach \k in {1,2,3}{
+     \path[post] (x\k) to (xi\i);
+     \path[post] (y\k) to (eta\i);
+  }
+}
+
+\foreach \i in {1,2,3} \path[post] (x4) to (xi\i);
+\end{tikzpicture}
+```
+
+- $\xi_1$ and $\eta_1$ are the first *canonical variate pair*.
+- $\xi_2$ and $\eta_2$ are the second *canonical variate pair*.
+- $\xi_3$ and $\eta_3$ are the second *canonical variate pair*.
+
+## How many pairs?
+
+#. Count the number of variables on the left
+#. Count the number of variables on the right.
+#. Choose the smaller number.
+
+# Data
+
+How are personality and career interests related?
+
+## Personality
+
+#. Openness to Experience (0)
+#. Conscientiousness (C)
+#. Extraversion (E)
+#. Agreeablness (A)
+#. Neuroticism (N)
+
+## Career Interests
+
+#. Realistic
+#. Investigative
+#. Artistic
+#. Social
+#. Enterprising
+#. Conventional
+
+```{tikz RIASEC, engine.opts = list(convert = 'C:\\Program Files\\ImageMagick-6.9.2-Q16\\convert.exe', convert.opts = '-density 300'), echo = FALSE, eval = ev, dev = "png"}
+\begin{tikzpicture};
+
+\foreach \i in {0,60,120,180,240,300} {
+\node[inner sep=0] (x\i) at (\i:5cm) {};
+\fill (x\i) circle (2pt);}
+
+\foreach \i/\j in {0/60,60/120,120/180,180/240,240/300,300/0} {
+\draw[-] (x\i) to (x\j);}
+\node[rotate =30] at (120:5.3cm){Realistic};
+\node[rotate = -30] at (60:5.3cm){Investigative};
+\node[rotate = -90] at (0:5.3cm){Artistic};
+\node[rotate = 30] at (300:5.3cm){Social};
+\node[rotate = -30] at (240:5.3cm){Enterprising};
+\node[rotate = -90] at (180:5.3cm){Conventional};
+\end{tikzpicture};
+
+
+```
+
+```{r}
+glimpse(d)
+```
+
+
+# Make Composite Scores
+
+```{r}
+d <- d %>% rowwise %>% mutate(O = mean(O1:O5),
+                              C = mean(C1:C5),
+                              E = mean(E1:E5),
+                              A = mean(A1:A5),
+                              N = mean(N1:N5),
+                              Real = mean(Real1:Real5),
+                              Invest = mean(Invest1:Invest5),
+                              Art = mean(Art1:Art5),
+                              Soc = mean(Soc1:Soc5),
+                              Ent = mean(Ent1:Ent5),
+                              Conv = mean(Conv1:Conv5))
+glimpse(d)
+```
+
+```{r, include=FALSE}
+write.csv(d,"OCEANRIASEC.csv")
+```
+
+
+# Means
+
+```{r}
+tabular((Heading("Openness") * O + Heading("Conscientiousness") * C + Heading("Extraversion") * E + Heading("Agreeableness") * A + Heading("Neuroticism") * N + Heading("Realistic") * Real + Heading("Investigative") * Invest + Heading("Artistic") * Art + Heading("Social") * Soc + Heading("Enterprising") * Ent + Heading("Conscientiousness") * Conv) ~ (Heading("Mean") * mean + Heading("SD") * sd), data = d) %>% pander
+```
+
+# Correlations
+```{r, results='asis', echo=FALSE}
+library(ztable)
+z <- d %>% 
+  select(O:Conv) %>% 
+  cor %>% 
+  ztable(type = "html", caption = "Correlations")  
+for (i in 2:6) z <- addCellColor(z,
+                                 rows = i,
+                                 cols = 2:6,
+                                 color = "mediumslateblue")
+for (i in 7:12) z <- addCellColor(z,
+                                  rows = i,
+                                  cols = 2:6,
+                                  color = "mediumorchid")
+for (i in 2:6) z <- addCellColor(z,
+                                 rows = i,
+                                 cols = 7:12,
+                                 color = "mediumorchid")
+for (i in 7:12) z <- addCellColor(z,
+                                  rows = i,
+                                  cols = 7:12,
+                                  color = "utahcrimson")
+z
+```
+
+$$\boldsymbol{R = \color{crimson}{R_{yy}^{-1}}\color{mediumorchid}{R_{yx}}\color{mediumslateblue}{R_{xx}^{-1}}\color{mediumorchid}{R_{xy}}}$$
+
+# CCA in R
+
+```{r}
+RR <- cor(d %>% select(O:Conv))
+Rxx <- RR[1:5,1:5]
+Rxy <- RR[1:5,6:11]
+Ryx <- RR[6:11,1:5]
+Ryy <- RR[6:11,6:11]
+
+R <- solve(Rxx) %*% Rxy %*% solve(Ryy) %*% Ryx
+eigR <- eigen(R)
+eigR$values %>% sqrt
+
+stats::cancor(d %>% select(O:N), d %>% select(Real:Conv))
+```
+
+# CCA using the `candisc` package
+
+```{r}
+library(candisc)
+cca <- candisc::cancor(d %>% select(O:N), d %>% select(Real:Conv))
+cca %>% summary
+
+CanCorTable(cca)
+CanCorTestTable(cca)
+
+cca$coef$X %>% pander
+coef(cca, type = "x", standardize = TRUE) %>% pander
+cca$coef$Y %>% pander
+coef(cca, type = "y", standardize = TRUE) %>% pander
+cca$scores$X %>% head
+cca$scores$Y %>% head
+
+plot(cca, which = 1)
+plot(cca, which = 2)
+plot(cca, which = 3)
+plot(cca, which = 4)
+plot(cca, which = 5)
+
+cor(cbind(cca$scores$X,cca$scores$Y)) %>% pander
+cca$structure$X.xscores %>% pander
+cca$structure$X.yscores %>% pander
+cca$structure$Y.yscores %>% pander
+cca$structure$Y.xscores %>% pander
+
+
+```
+
+# Interpreting CCA
+
+```{r}
+PersonalityNames <- c("Openness",
+                      "Conscientiousness",
+                      "Extraversion",
+                      "Agreeableness",
+                      "Neuroticism")
+InterestNames <- c("Realistic",
+                   "Investigative",
+                   "Artistic",
+                   "Social",
+                   "Enterprising",
+                   "Conventional")
+CanCorCoefTable(cca,
+                type = "standardized",
+                xNames = PersonalityNames,
+                yNames = InterestNames,
+                xSet = "Personality",
+                ySet = "Interests")
+CanCorCoefTable(cca,
+                type = "structure",
+                xNames = PersonalityNames,
+                yNames = InterestNames,
+                xSet = "Personality",
+                ySet = "Interests")
+
+heplot(cca)
+heplot(cca, which = c(1,3))
+heplot(cca, which = c(2,3))      
+```
+
+
+# Redundancy Analysis
+
+Proportion of variance in X explained by Y and vice-versa
+
+```{r}
+redundancy(cca)
+```
+
+# Multivariate Multiple Regression
+
+```{r}
+mxy <- lm(cbind(Real, Invest, Art, Soc, Ent, Conv) ~ O + C + E + A + N, d)
+mxy %>% manovaTable
+mxy %>% manovaUnivariateTable
+library(lm.beta)
+lm.beta(mxy) %$% standardized.coefficients %>% pander
+pairs(mxy)
+```
+
+# CCA in SPSS
+
+`MANOVA` (available in syntax only).
+
+

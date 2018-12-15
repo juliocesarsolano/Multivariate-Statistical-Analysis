@@ -1,0 +1,249 @@
+---
+title: "Analisis de Regresion Multiple"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Sep 07, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(31451)
+```
+
+
+# Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+require(ggplot2)
+require(dplyr)
+require(summarytools)          # descr and dfSummary functions
+require(PerformanceAnalytics)  # chart.Correlation function
+require(rgl)                   # plot3d, surface3d functions, exercise 10
+require(rglwidget)             # including a 3D plot, exercise 10
+```
+
+
+# Problem Definition
+En los siguientes ejercicios vamos a cubrir el análisis de regresión múltiple en R. Utilizaremos el set de datos state.x77, disponible en R: help("state.x77"). Es un Conjunto de datos relacionados con los 50 estados de los Estados Unidos de América. Ajustaremos varios modelos, calcularemos los intervalos de confianza para los coeficientes, realizaremos predicciones, evaluaremos la exactitud y error del modelo de regresión, realizaremos graficos 3D de nuestro modelo.
+
+
+# Exercise 1: Data Source
+
+VARIABLES DESCRIPTION:
+**Population**:
+population estimate as of July 1, 1975
+
+**Income**:
+per capita income (1974)
+
+**Illiteracy**:
+illiteracy (1970, percent of population)
+
+**Life Exp**:
+life expectancy in years (1969–71)
+
+**Murder**:
+murder and non-negligent manslaughter rate per 100,000 population (1976)
+
+**HS Grad**:
+percent high-school graduates (1970)
+
+**Frost**:
+mean number of days with minimum temperature below freezing (1931–1960) in capital or large city
+
+**Area**:
+land area in square miles
+
+```{r, e1, warning=FALSE, message=FALSE}
+# a.
+data(state.x77)
+
+# b.
+state.x771 <- as.data.frame(state.x77)
+
+# c.
+names(state.x771)[4] <- "Life.Exp"
+names(state.x771)[6] <- "HS.Grad"
+
+# d.
+names(state.x771)
+head(state.x771, 15)
+summary(state.x771)
+print(dfSummary(state.x771, graph.magnif = 0.75), method = 'render')
+```
+
+
+# Exercise 2: Deteccion y Eliminacion de Outliers
+Se utiliza el metodo de las distancias Cook's. En general, distancias Cook's mayores que 4 pueden influenciar significativamente el modelo.
+```{r, e2, warning=FALSE, message=FALSE}
+out.model <- lm(Life.Exp ~ ., data=state.x771)
+cooksd <- cooks.distance(out.model)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+# add labels
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  
+
+# Observations
+influential.obs <- as.numeric(names(cooksd)[(cooksd > 4*mean(cooksd, na.rm=T))])  # influential row numbers
+influential.obs
+head(state.x771[influential.obs, ])  # influential observations (rows)
+
+# Nueva data sin Outliers
+state77 <- na.omit(state.x771[-influential.obs, ])
+str(state77)
+mean <- round(mean(state77$ENERGY), digits = 2)
+sd <- round(sd(state77$ENERGY), digits = 2)
+```   
+
+Se detectan `r toString(length(influential.obs))` observaciones con distancias Cook's mayores que 4, que pueden influenciar significativamente el modelo. Estas observaciones son retiradas de la data.
+
+
+# Exercise 3: Analisis de la Variabilidad de las Variables (Removing Zero Covariates) 
+Se usa la función nearZeroVar() del paquete caret para buscar las variables que tengan “varianza casi cero”, aquellas que entre las dos categorías más numerosas tengan una relación de 90/10 y que tengan menos de 10 valores únicos. Dado que no hay ninguna con NZV=0, todas son utilizadas en el analisis. 
+```{r, e3, warning=FALSE, message=FALSE}
+library(caret)
+nzv = nearZeroVar(state77, freqCut = 90/10, uniqueCut = 10, saveMetrics = TRUE)
+nzv
+```
+
+No hay variables para eliminar.
+
+
+# Exercise 4: Correlation Matrix
+```{r, e4, warning=FALSE, message=FALSE}
+tiff(file = "Matriz de Correlacion State77.png", width=960, height=960, bg="white")
+chart.Correlation(state77, histogram=TRUE, pch="*", method = c("spearman"))
+dev.off()
+
+chart.Correlation(state77, histogram=TRUE, pch="*", method = c("spearman"))
+```
+
+
+# Exercise 5: Model 1
+```{r, e5, warning=FALSE, message=FALSE}
+model1 <- lm(Life.Exp ~ ., data = state77)     # the '.' means 'all' 
+summary(model1)
+```
+
+
+# Exercise 6: Model 2
+```{r, e6, warning=FALSE, message=FALSE}
+model2 <- update(model1, . ~ . -Income -Illiteracy -Area)
+summary(model2)
+```
+
+
+# Exercise 7: Model 3
+```{r, e7, warning=FALSE, message=FALSE}
+model3 <- lm(Life.Exp ~ HS.Grad + Murder, data = state77)
+summary(model3)
+
+par(mfrow=c(2,2))
+plot(model3)
+```
+
+
+# Exercise 8: Model 4, 5, 6
+```{r, e8, warning=FALSE, message=FALSE}
+model4  <-  lm(Life.Exp ~ HS.Grad+Murder + HS.Grad:Murder, data = state77)
+summary(model4)
+
+model5  <-  lm(Life.Exp ~ HS.Grad*Murder, data = state77)
+summary(model5)
+
+model6  <-  lm(Life.Exp ~ (HS.Grad+Murder)^2, data = state77)
+summary(model6)
+```
+
+
+# Exercise 9: Confidence Intervals
+```{r, e9, warning=FALSE, message=FALSE}
+confint(model3, level=0.95)
+```
+
+
+# Exercise 10: Predict
+```{r, e10, warning=FALSE, message=FALSE}
+predict(model3, data.frame(HS.Grad=55, Murder=8))
+```
+
+
+# Exercise 11: Predict (Confidence)
+The intervals can include the uncertainty on the estimated coefficients (confidence), the variance ("noise") in the observations, or both (prediction). So a prediction interval is always wider than a confidence interval. One is a **prediction** of a future observation, and the other is a predicted mean response.
+```{r, e11, warning=FALSE, message=FALSE}
+predict(model3, data.frame(HS.Grad=55,Murder=8), interval = "confidence", level=0.98)
+```
+
+
+# Exercise 12: Predict (Prediction)
+The intervals can include the uncertainty on the estimated coefficients (confidence), the variance ("noise") in the observations, or both (prediction). So a prediction interval is always wider than a confidence interval. One is a **prediction** of a future observation, and the other is a predicted mean response.
+```{r, e12, warning=FALSE, message=FALSE}
+predict(model3, data.frame(HS.Grad=55,Murder=8), interval = "prediction", level=0.98)
+```
+
+
+# Exercise 13: Plot 
+```{r, e13, warning=FALSE, message=FALSE}
+plotdat <- expand.grid(HS.Grad = seq(34, 70, by=2), Murder = seq(1, 16, by=1)) 
+plotdat$pred1 <- predict(model3, newdata = plotdat)
+
+with(state77, plot3d(HS.Grad, Murder, Life.Exp,	col="blue", size=1, type="s"))
+with(plotdat, surface3d(unique(HS.Grad), unique(Murder), pred1, alpha=0.5, front="line", back="line"))
+
+rglwidget(height = 1000, width = 1000)
+```
+
+
+# Exercise 14: Stepwise
+```{r, e14, warning=FALSE, message=FALSE}
+goodModel <- step(model1, direction = "both") # Stepwise method, doble o mixto
+summary(goodModel)
+```
+
+
+# Exercise 15 (Optional): Exactitud de las Predicciones
+Nota: dado que el set datos contiene pocas observaciones no se recomienda partir en train y test. Se sugiere utilizar la metodologia K-fold Cross Validation.
+```{r, e151, warning=FALSE, message=FALSE}
+trainingRowIndex <- sample(1:nrow(state77), 0.75*nrow(state77))  # row indices for training data
+training <- state77[trainingRowIndex, ]  # model training data
+testing <- state77[-trainingRowIndex, ]  # test data
+dim(training); dim(testing)
+```
+
+```{r, e152, warning=FALSE, message=FALSE}
+FinalModel <- lm(Life.Exp ~ Murder+HS.Grad+Frost, data = training)
+summary(FinalModel)
+
+ypred <- predict(FinalModel, newdata = testing, se = TRUE) # Predicted vs Truth in test set
+actuals_preds <- data.frame(cbind(actuals=testing$Life.Exp, predicteds=ypred$fit)) 
+correlation_accuracy <- cor(actuals_preds)
+correlation_accuracy
+actuals_preds # Los valores predecidos
+
+library(scales)
+ggplot(actuals_preds, aes(predicteds, actuals)) + 
+        geom_point() +
+        geom_abline(intercept = 0, slope = 1, colour = "red", size = 0.8) + 
+        scale_y_continuous(breaks= pretty_breaks()) +
+        expand_limits(x = 75, y = 75) +
+        labs(x = "Prediccion Expectativa de Vida [años]") + 
+        labs(y = "Expectativa de Vida Real [años]") + 
+        labs(title = "Prediccion Expectativa de Vida - Testing Data")
+
+
+# Min Max Accuracy (%)
+min_max_accuracy <- mean(apply(actuals_preds, 1, min) / apply(actuals_preds, 1, max))
+round(min_max_accuracy, digits = 3)*100
+
+# Diferencia Relativa Absoluta Promedio en porcentaje -MARD(%)
+MARD <- mean(abs((actuals_preds$predicteds - actuals_preds$actuals)) / actuals_preds$actuals)  
+round(MARD, digits = 3)*100
+```

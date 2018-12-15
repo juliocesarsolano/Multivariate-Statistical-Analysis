@@ -1,0 +1,606 @@
+---
+title: "Conducting and Reporting *t*-tests in R"
+author: "W. Joel Schneider"
+date: "Psychology 444<br>Multivariate Analysis"
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    fig_height: 4
+    fig_width: 6
+    highlight: kate
+    widescreen: yes
+---
+
+
+# Data Management{.SectionSlide}
+
+```{r setup, include=FALSE}
+# Install these packages if they are missing
+list.of.packages <- c("ggplot2", "knitr", "dplyr", "readr", "ggthemes", "ztable", "stargazer", "sjPlot", "sjmisc","Hmisc","tidyr","shape","scales")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if (length(new.packages)) install.packages(new.packages)
+
+# Load packages
+library(knitr)
+library(Hmisc)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(ztable)
+library(stargazer)
+library(sjPlot)
+library(sjmisc)
+library(tidyr)
+library(shape)
+library(scales)
+library(svglite)
+opts_chunk$set(
+  dev = "svglite"
+)
+options(digits = 2)
+
+rinline <- function(code) {
+  sprintf('``` `r %s` ```', code)
+}
+```
+
+
+```{r MakeData, include=FALSE}
+library(readr)
+set.seed(1)
+mu1 <- 10
+sigma1 <- 3
+mu2 <- 13
+sigma2 <- 3
+n1 <- 58
+n2 <- 87
+x1 <- rnorm(n = n1,mean = mu1,sd = sigma1)
+x2 <- rnorm(n = n2,mean = mu2,sd = sigma2)
+x <- c(x1,x2)
+group <- factor(c(rep(1,n1),rep(2,n2)),labels = c("Group 1","Group 2"))
+d <- data.frame(IV = group,DV = x)
+write_csv(x = d,path = "ttest.csv")
+
+d2 <- data.frame(id = 1:n1, x_1 = x1, x_2 = x2[1:n1])
+write_csv(x = d2,path = "pairedttest.csv")
+```
+
+
+# Import Data
+
+Most data can be stored in the .csv format (Comma-separated values).
+
+The base R `read.csv` function works great. The `readr` package has a faster function called `read_csv` with better defaults.
+
+```{r import}
+d <- read.csv("http://my.ilstu.edu/~wjschne/444/ttest.csv")
+```
+
+* `IV`: Independent Variable
+    + Group 1
+    + Group 2
+* `DV`: Dependent Variable
+
+# Other Packages for Importing Data
+
+* The `haven` package will read and write data created in SPSS, SAS, and Stata. The `Hmisc` and `foreign` packages have similar functions.
+* The `readxl` package reads data stored in Excel, as does the `xlsx` package.
+* There are many packages that read from databases, including `RODBC`, `DBI`, and `sqldf`.
+
+[Video tutorial on importing data into R](https://vimeo.com/130548869)
+
+# View Data
+
+To see the first few cases use the `head` function. The `tail` function displays the last few cases.
+
+```{r headtail}
+head(d)
+tail(d)
+```
+
+To see the entire data set, use the `View` function.
+
+```{r viewdata, eval = FALSE}
+View(d)
+```
+
+The `dplyr` package has a nifty `glimpse` function for viewing a little bit of the each variable.
+
+```{r glimpsedata}
+library(dplyr)
+glimpse(d)
+```
+
+Here we see the variable names, the data types,and the first few data points.
+
+## Data types in R
+
+* lgl: Logical data  (i.e., `TRUE` and `FALSE`).
+* int: Integer data (e.g. `1L`, `2L`, ...0)
+* dbl: Numeric/Double-precision floating-point (e.g. `2.38`)
+* cmpl: Complex (e.g., `6 + 3i`)
+* fctr: Factor = nominal data stored as numbers (e.g., `1 = "Male"`)
+
+
+
+# Independent-Samples *t*-tests {.SectionSlide}
+
+$$H_0: \mu_0=\mu_1$$
+
+$$H_1: \mu_0\ne\mu_1$$
+
+
+
+# Running the Independent Samples *t*-test
+
+Unlike most programs, the `t.test` function assumes *unequal* variances by default. I think this is a good idea.
+
+```{r varunequal}
+with(d, t.test(DV ~ IV))
+```
+
+Set `var.equal` to `TRUE` for equal variances.
+
+```{r varequal}
+with(d, t.test(DV ~ IV, var.equal = TRUE))
+```
+
+# Levene's Test for Homogeneity of Variance
+
+```{r levene}
+library(sjmisc)
+with(d, levene_test(DV, IV))
+```
+
+The `leveneTest` function from the `car` package is more widely known but I like the `sjmisc` output better. 
+
+Other homogeneity of variance tests: `fligner.test` and `bartlett.test`
+
+```{r homogeneity}
+fligner.test(DV ~ IV, data = d)
+bartlett.test(DV ~ IV, data = d)
+```
+
+
+# Descriptives
+
+We will make extensive use of the `dplyr` package for data manipulation. It also allows us to use the pipe operator: `%>%`. It takes the output of the last function and inserts it into the first slot of the next function. Think of it as the "Then-Do-This" function. It makes code much easier to write and read. The RStudio shortcut for `%>%` is Ctrl+Shift+M (&#8984;+Shift+M for Mac).
+
+Let's calculate summary statistics for each group. 
+
+```{r groupsummary}
+library(dplyr)
+# Summarize data by groups
+md <- d %>% # "Start with the data set we imported, d 
+  group_by(IV) %>% # Then group d by IV
+  summarize(N = length(DV), # Then summarize each group
+            Mean = mean(DV),
+            SD = sd(DV),
+            SE = SD/sqrt(N)) 
+
+# Display md
+md 
+```
+
+Not pretty, is it? It isn't supposed to be. Statistical output in R is always raw text. This seeming weakness is actually one of the great advantages of using R. Raw text can be formatted (by R or by other programs) to create publication-ready output without having to be cut and pasted by you. 
+
+RStudio, under the hood, is taking your statistical output, combining it with your RMarkdown document, and creating a Markdown document using the `knitr` package. Then it hands the Markdown document to Pandoc, which converts it to one of many possible formats, including MS Word, HTML, or .pdf. 
+
+This slideshow was created in RMarkdown and converted by Pandoc to an HTML5 slide format called Slidy.
+
+More complex formatting is available using what RStudio calls "R Sweave" documents (.Rnw). The `knitr` package "knits" R code and $\LaTeX$ to create a .tex file, which is converted to a .pdf document using pdfLaTeX. Actually, pdfLatex handles the last step of the conversion from RMarkdown to .pdf format.
+
+Other R packages, including `pander` and `ReportR`, can create complex documents in MS Word or html.
+
+# Display data in tables
+
+For simple tables, the `kable` function in the `knitr` package works well.
+
+```{r kabletable}
+library(knitr)
+kable(md, digits = 2)
+```
+
+If we are going to use the `kable` function just once and loading the whole `knitr` library seems like overkill, you can use the `::` function. 
+
+```{r justkable, eval= FALSE}
+knitr::kable(md, digits = 2)
+```
+
+The `::` function allow us to use any function from any installed package, whether it is loaded or not. Sometimes functions from different packages have the same name. Using the `::` function removes the ambiguity.
+
+We would also like statistics for the entire data set. Note that I added `IV = "Total"` so that I can later combine the total statistics with the group statistics in one table.
+
+```{r summarizedplry}
+# Summarize whole data set
+td <- d %>% summarize(IV = "Total",
+                      N = length(DV), 
+                      Mean = mean(DV),
+                      SD = sd(DV),
+                      SE = SD/sqrt(N))
+# Display td
+td 
+# Combine data into one object
+dd <- rbind(md,td)
+# Display combined table
+kable(dd, digits = 2)
+```
+
+For more complex tables, we can use many other packages, including `xtable`, `ztable`, `pander`, `htmlTable`, `stargazer`, `sjPlot`, `memisc`, and `tables`.
+
+# Bar Plot
+
+```{r barplotggplot}
+# Load ggplot2 library
+library(ggplot2)
+# Set ggplot defaults
+themeMod <- theme_grey() + 
+  theme(text = element_text(family = "serif", size = 10),
+        legend.position = "none", axis.text.y = element_text(hjust = 1))
+theme_set(themeMod)
+# Custom colors 
+myFill <- function(...){
+  scale_fill_manual(values = alpha(c("royalblue","firebrick"),0.5),...)
+}
+
+scale_fill_discrete <- myFill
+
+# Tell gpplot what data to load
+# what to put on x and y axis
+p <- ggplot(data = d, aes(y = DV, 
+                          x = IV,
+                          fill = IV)) 
+p + stat_summary(fun.y = "mean", 
+                 geom = "bar") 
+```
+
+# Error Bars
+
+```{r ggerrorbars}
+p + stat_summary(fun.y = "mean", 
+                 geom = "bar") + 
+  stat_summary(fun.data = "mean_cl_normal", 
+               geom = "errorbar", 
+               width = 0.1)
+
+```
+
+# Box Plot
+
+```{r plot_t}
+p + geom_boxplot() 
+```
+
+The line in the box is the median, not the mean. 
+
+The box is the interquartile range. 
+
+The whiskers are roughly the middle 95% CI.
+
+The points are outliers.
+
+# Density Plot
+
+```{r density}
+ggplot(d, aes(x = DV, fill = IV)) + 
+  geom_density(color = NA) 
+```
+
+# Violin Plot
+
+```{r violin}
+p + geom_violin(color = NA) 
+```
+
+The violin plot is a centered vertical density plot.
+
+# Combined Violin and Notched Boxplot
+
+```{r violinnotch}
+p + geom_violin(alpha = 0.5,
+                color = NA) + 
+  geom_boxplot(notch = TRUE,
+               width = 0.5) 
+```
+
+If the notches in the box plots do not overlap, the medians are probably significantly different.
+
+# Dot Plot with PointRange Showing Means and 95% CI
+
+```{r dotplot, message = FALSE, warning= FALSE}
+p + geom_dotplot(binaxis = "y",
+                 stackdir = "center", 
+                 binwidth = .4, 
+                 alpha = 0.5, 
+                 color = NA) + 
+  stat_summary(fun.data = "mean_cl_normal", 
+               geom = "pointrange", 
+               width = 0.1,
+               color = c("royalblue","firebrick"),
+               lwd = 1.5) 
+```
+
+# t-test write-up
+
+```{r ttwriteup}
+tt <- with(d, t.test(DV ~ IV, var.equal = TRUE))
+tvalue <- tt$statistic %>% formatC(digits = 2, format = "f")
+if (tt$p.value < 0.0005) {
+    pvalue <- " < 0.001" 
+  } else { 
+    if (tt$p.value < 0.005)
+      pvalue <- paste0(" = ",tt$p.value %>% formatC(digits = 3, format = "f"))
+    else 
+      pvalue <- paste0(" = ",tt$p.value %>% formatC(digits = 2, format = "f")) 
+  }
+df <- tt$parameter
+```
+
+This:
+
+On average, Group 2 (m = `r rinline("dd$Mean[1]")`) scored significantly higher than Group 2 (m = `r rinline("dd$Mean[2]")`), `*t*`(`r rinline("df")`) = `r rinline("tvalue")`, `*p*` < `r rinline("pvalue")`.
+
+Becomes:
+
+On average, Group 2 (m = `r dd$Mean[1]`) scored significantly higher than Group 2 (m = `r dd$Mean[2]`), *t*(`r df`) = `r tvalue`, *p* `r pvalue`.
+
+# Write-up with resusable functions
+
+Automate your reports with frequently-used functions.
+
+```{r ttreport}
+t.report <- function(tt){
+  tvalue <- tt$statistic %>% formatC(digits = 2, format = "f")
+  pvalue <- tt$p.value %>% formatC(digits = 2, format = "f")
+  if (round(tt$parameter, 0) == tt$parameter) {
+    df <- tt$parameter
+  } else {
+    df <- formatC(digits = 2, format = "f")
+  }
+  if (tt$p.value < 0.0005) {
+    pvalue <- " < 0.001" 
+  } else { 
+    if (tt$p.value < 0.005) {
+      pvalue <- paste0(" = ",tt$p.value %>% formatC(digits = 3, format = "f"))
+    } else {
+      pvalue <- paste0(" = ",tt$p.value %>% formatC(digits = 2, format = "f"))
+    }
+    } 
+  paste0("*t*(",df,") = ",tvalue, ", *p*", pvalue)
+  }
+```
+
+This:
+
+As seen in Table 1 and Figure 1, the mean of Group 2 is significantly higher than the mean of Group 2, `r rinline("t.report(tt)")`.
+
+Becomes:
+
+As seen in Table 1 and Figure 1, the mean of Group 2 is significantly higher than the mean of Group 2, `r t.report(tt)`.
+
+```{r tablekable}
+library(knitr)
+#Make Table
+kable(dd,
+      digits = 2,
+      caption = "Table 1: Descriptive Statistics for DV",
+      align = "c")
+```
+
+```{r violinplotgroup, fig.cap="Figure 1: Violin Plot with Group Means and Standard Errors"}
+ggplot(data = d, aes(y = DV, x = IV, fill = IV))  + 
+  geom_violin(alpha = 0.5, color = NA) + 
+  stat_summary(fun.data = "mean_cl_normal", 
+               color = c("royalblue","firebrick"), 
+               size = 1.1) 
+```
+
+The `papaja` package has many APA format functions that make life easier.
+
+```{r papaja, eval=FALSE}
+devtools::install_github("crsh/papaja")
+```
+
+[How not to worry about APA style](http://blog.efpsa.org/2015/06/09/how-not-to-worry-about-apa-style/)
+
+# Write-up Files
+
+[Markdown](http://my.ilstu.edu/~wjschne/444/IndependentSamplesWriteUp.Rmd)
+
+[Word](http://my.ilstu.edu/~wjschne/444/IndependentSamplesWriteUp.docx)
+
+[.pdf](http://my.ilstu.edu/~wjschne/444/IndependentSamplesWriteUp.pdf)
+
+# *t*-test as Regression
+
+$$Y_i=b_0+b_1 X_i + e_i$$
+
+Where:
+
+$Y_i$: The score on $\mathbf{Y}$ for person $i$
+
+$b_0 = \mu_0$: The mean of the reference group
+
+$b_1 = \mu_1 - \mu_0$: The difference of the two group means
+
+$X_i$: Group membership for person $i$ (0 or 1)
+
+$\mathbf{X}\sim B(1,p)$: $\mathbf{X}$ has a Bernoulli distribution with probability $p$.
+
+$e_i$: The deviation of $Y_i$ from the group mean for person $i$
+
+$\mathbf{e}\sim N(0,\sigma_e^2)$: $\mathbf{e}$ has a normal distribution with a mean of 0 and a variance of $\sigma_e^2$.
+
+The distribution of $\mathbf{e}$ gives us both the normality assumption and the homogeneity of variance assumption.
+
+
+```{r ttestregression, echo=F}
+nIV <- (d$IV == "Group 2") * 1
+cCol <- scales::alpha(c("royalblue","firebrick"), 0.5)
+jIV <- nIV + rnorm(nrow(d),mean = 0,sd = 0.005) 
+par(family = "serif", pty = "s")
+plot(DV~jIV, 
+     data = d, 
+     col = cCol[nIV + 1],
+     pch = 16, 
+     xlab = "IV", 
+     ylab = "DV", 
+     las = 1, 
+     xlim = c(-0.05,1.05),
+     ylim = c(3,21),
+     main = "Independent-Samples as Regression")
+dd <- d %>% group_by(IV) %>% summarize(DV = mean(DV)) %>% ungroup() %>% select(DV)
+
+lines(c(0,1),c(dd$DV))
+text(0.5, dd$DV[1] + (dd$DV[2] - dd$DV[1])/2, bquote(italic(b[1]) == .(formatC(dd$DV[2] - dd$DV[1],2,format = "f"))),pos = 3,srt = 5)
+```
+
+Do *t*-test results accord with the regression results?
+
+If $b_1=0$, we get a one-sample *t*-test:
+
+$$\begin{align}Y_i&=b_0+0 X_i+ e_i\\&=\mu_0+e_i\end{align}$$
+
+
+
+# Paired-Samples *t*-test {.SectionSlide}
+
+
+# Import Paired Data
+
+Variables | Label
+:---------|:-------
+`id`      | Case Number
+`x_1`     | Time 1 score
+`x_2`     | Time 2 score
+
+```{r readd2}
+d2 <- read.csv("http://my.ilstu.edu/~wjschne/444/pairedttest.csv")
+kable(head(d2), 
+      caption = "First 6 cases of d2", 
+      digits = 2)
+```
+
+# Run Paired-Samples *t*-test
+
+$$H_0: \mu_1=\mu_2$$
+
+$$H_1: \mu_1\ne\mu_2$$
+
+```{r pairedt}
+with(d2, t.test(x_1, x_2, paired = TRUE))
+```
+
+# Plot Difference Scores&mdash;Histogram
+
+```{r dplot}
+d2d <- d2 %>% mutate(Difference = x_2 - x_1)
+
+dplot <- ggplot(d2d, aes(x = Difference)) 
+dplot + geom_histogram(binwidth = 1)
+```
+
+# Plot Difference Scores&mdash;Density Plot
+
+```{r}
+dplot + 
+  geom_density(fill = "royalblue", 
+               alpha = 0.5, 
+               color = NA) + 
+  geom_point(aes(y = 0),
+             alpha = 0.5)
+```
+
+# Tidy Data
+
+Many R packages assume that your data are structured in a way that [Hadley Wickham calls *tidy data*](http://vita.had.co.nz/papers/tidy-data.html).
+
+The `tidyr` package has simple tools for data restructuring. For more complex restructring, we might need the `reshape2` package. Both packages are by Hadley Wickham (who also wrote `dplyr`, `ggplot2`, and many others).
+
+## Definition of Tidy Data
+
+1. Each variable forms a column.
+2. Each observation forms a row.
+3. Each type of observational unit forms a table.
+
+[Data Management Cheatsheet](https://www.rstudio.com/wp-content/uploads/2015/02/data-wrangling-cheatsheet.pdf)
+
+[Great video on Data Wrangling](https://www.rstudio.com/resources/webinars/archives/)
+
+[Slides](https://github.com/rstudio/webinars/raw/master/05-Data-Wrangling-with-R-and-RStudio/wrangling-webinar.pdf)
+
+# Restructure data
+
+```{r}
+# Restructure data to make a tidy data set.
+library(tidyr)
+d2r <- d2 %>% 
+  gather(key = "Time", 
+         value = "x", 
+         x_1:x_2) %>% 
+  mutate(Time = extract_numeric(Time)) %>% 
+  arrange(id, Time) %>% 
+  mutate(Time = factor(Time))
+# Print first 3 cases (6 rows)
+kable(head(d2r), 
+      digits = 2, 
+      caption = "First three cases of d2r",
+      align = "c")
+```
+
+# Line Plot with Errors
+
+```{r}
+ggplot(d2r, aes(Time, x)) + 
+  stat_summary(fun.y = "mean", geom = "line", aes(group = 1)) +
+  stat_summary(fun.data = "mean_cl_normal",size = 1)
+```
+
+
+# Plot Paired-Points
+
+```{r}
+ggplot(d2r, aes(Time,x)) + 
+  geom_violin(color = NA) +
+  geom_point(aes(group = id, color = factor(id)), alpha = 0.3) +
+  geom_line(aes(group = id, color = factor(id)), alpha = 0.3) + 
+  stat_summary(fun.data = "mean_cl_normal",size = 5, geom = "point") +
+  stat_summary(fun.y = "mean",size = 2, geom = "line", aes(group = 1)) +
+  ylab("DV") 
+```
+
+# Paired-Samples as Regression
+
+Assume that $b_1=1$
+
+$\begin{align}Y_i&=b_0 + b_1 X_i + e_i\\&=b_0 + X_i + e_i\end{align}$
+
+If $b_0\ne 0$, the means of $X$ and $Y$ are different.
+
+```{r, echo = FALSE,fig.height = 7,fig.width = 7, dev = 'svg'}
+par(family = "serif",pty = "s",xaxs = "i",yaxs = "i", mar = c(5,5,1,1))
+plot(x_2 ~ x_1,data = d2, xlim = c(0,20), ylim = c(0,20), xlab = "X", ylab = "Y", pch = 16, col = rgb(0,0,1,0.5),las = 1, bty = "n")
+
+mu1 <- mean(d2$x_1)
+mu2 <- mean(d2$x_2)
+b0 <- mu2 - mu1
+abline(b0, 1)
+abline(0, 1,lty = 3)
+abline(v = mu1,lty = 3)
+abline(h = mu2,lty = 3)
+text(5,5 + b0,expression(italic(b[1] == 1)),srt = 45,pos = 1)
+text(mu1,5,bquote(bar(italic(X)) == .(formatC(mu1,digits = 1,format = "f"))),pos = 4)
+text(18,mu2,bquote(bar(italic(Y)) == .(formatC(mu2,digits = 1,format = "f"))),pos = 3)
+Arrows(mu1,mu1,mu1,mu2,code = 3, arr.adj = 1, col = "firebrick",lwd = 1.5)
+par(xpd = T)
+text(0, b0, bquote(italic(b[0]) == .(formatC(b0,digits = 1,format = "f"))), col = "firebrick",  pos = 4)
+Arrows(0,0,0,b0,code = 3, arr.adj = 1, col = "firebrick",lwd = 1.5)
+par(xpd = F)
+
+```
+
+
+Inspired by [this paper](http://statland.org/AP/pairs.pdf)
+
+

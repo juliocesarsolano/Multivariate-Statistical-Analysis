@@ -1,0 +1,175 @@
+---
+title: "Principal Component Analysis (PCA)"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Sep 07, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(111)
+```
+
+
+# Loading Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+library(factoextra)              # fviz_eig, fviz_pca_var, get_pca_var functions
+library(psych)                   # fa.parallel function 
+library(PerformanceAnalytics)    # chart.Correlation
+library(REdaS)                   # bart_spher & KMOS functions
+library(ggplot2) 
+library(corrplot)                # corrplot function
+library(gridExtra)               # grid.arrange function
+library(kableExtra)
+
+#Organizing Packge information for table
+packages <- c("factoextra", "psych", "PerformanceAnalytics", "REdaS", "ggplot2", "corrplot", "gridExtra", "kableExtra")
+display <- c("Package","Title", "Maintainer", "Version", "URL")
+table <- matrix(NA, 1, NROW(display), dimnames = list(1, display))
+for(i in 1:NROW(packages)){
+list <- packageDescription(packages[i])
+table <- rbind(table, matrix(unlist(list[c(display)]), 1, NROW(display), byrow = T))
+}
+table[,NROW(display)] <- stringr::str_extract(table[,NROW(display)], ".+,")
+
+#Table of packages
+kable(table[-1,], format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Problem Definition
+Este estudio recoge la composición y características físico-químicas de 276 acuíferos del Etna (Sicilia) y fue publicado en Aiuppa, A., Bellomo, S., Brusca, L., D’Alessandro, W., Federico, C. (2003) Natural and anthropogenic factors affecting groundwater quality of an active volcano (Mt. Etna, Italy). Applied Geochemistry, 18, 863–882.  
+
+El objetivo de este estudio es entender la procedencia de los diferentes tipos de aguas del Monte Etna y gestionar adecuadamente los recursos hídricos de Sicilia (Italia).
+
+
+# Exercise 1: Data Source
+```{r, e1, warning=FALSE, message=FALSE}
+acuiferos.raw <- read.csv("acuiferos.csv", header=T, sep = ",")
+
+temp <- subset(acuiferos.raw, select=c(1,2,3,4,6,7,8,9,10,11,12,13,14,15,19))
+
+temp$Date <- as.Date(temp$Date,'%d-%m-%y')
+acuiferos <- na.omit(temp)
+
+str(acuiferos)
+head(acuiferos, 10)
+```
+
+
+# Exercise 2: Matrix Correlation
+```{r, e2, warning=FALSE, message=FALSE}
+chart.Correlation(acuiferos[, 3:15], histogram=TRUE, pch="*", method = c("spearman"))
+```
+
+De la matriz de correlación se puede destacar: (1) la alta correlación (lineal) entre el Na-Cl-TDS, y una menor relación de éstos con el K-Mg-Alk; (2) la media correlación (lineal) entre NO3 – SO4. El grafico de dispersión muestra estas asociaciones lineales y descubre la relación no-lineal entre el B – SO4.
+
+
+# Exercise 3: Bartlett's Test of Sphericity & KMO Test
+```{r, e3, warning=FALSE, message=FALSE}
+REdaS::bart_spher(acuiferos[, 3:15], use = "complete.obs")
+REdaS::KMOS(acuiferos[, 3:15], use = "complete.obs")
+```
+
+Los resultados del test de Bartlett indican que el p value is < 0.000, esto es estadisticamente significativo, por tanto, se rechaza la Ho (matriz de correlacion es la matriz identidad), PCA puede ser implementado. Los resultados para el test KMO de adecuación muestreal no son muy alentadores, con KMO = 0.249 (Bad).
+
+
+# Exercise 4: PCA Model
+```{r, e4, warning=FALSE, message=FALSE}
+pca.model <- prcomp(acuiferos[, 3:15], center=TRUE, scale=TRUE)
+summary(pca.model)
+```
+
+El primer valor se debe a la varianza explicada, en tanto por uno, (0.441) del primer componente sin rotar; 0.181 es la varianza explicada por el segundo componente (sin rotar); y sucesivamente. La matriz de componentes nos informa de la relación entre las variables, agrupándolas y por lo tanto, reduciendo la cantidad de datos originales.
+
+
+# Exercise 5: Parallel Analysis
+El Análisis Paralelo (AP) selecciona los componentes o factores comunes que presentan valores propios mayores que los que se obtendrían por azar (Horn, 1965). La idea es: si la matriz analizada procediera de una población en que los ítems no estuvieran relacionados, ¿qué valores propios podrían alcanzar los factores comunes extraídos de esa matriz? Y ¿cuántos factores comunes de los que hemos obtenido sobre la matriz analizada superan esos valores propios "espurios"? La respuesta a esta pregunta ofrece el número correcto de factores comunes.
+```{r, e5, warning=FALSE, message=FALSE}
+psych::fa.parallel(acuiferos[, 3:15], fa="both", n.iter=50, error.bars=FALSE, sim=TRUE, quant=.95, cor="cor", show.legend=TRUE, main="Parallel Analysis Scree Plots") 
+```  
+
+El analisis paralelo sugiere que el numero de factores = 3 or 4 y el numero de componentes = 3 or 4.
+
+
+# Exercise 6: Scree Plot
+```{r, e6, warning=FALSE, message=FALSE}
+factoextra::fviz_eig(pca.model, "eigenvalue", barfill = "blue", barcolor = "blue", linecolor = "red")
+```
+
+
+# Exercise 7: Biplot
+```{r, e7, warning=FALSE, message=FALSE}
+factoextra::fviz_pca_var(pca.model, col.var = "blue")
+
+factoextra::fviz_pca_var(pca.model, col.var = "cos2", gradient.cols = c("#00AFBB","#E7B800","#FC4E07"), repel = T)
+
+pca.model$rotation[, 1:3]
+```
+
+
+# Exercise 8: Contribution to the Principal Components
+```{r, e8, warning=FALSE, message=FALSE}
+var <- get_pca_var(pca.model)
+a <- fviz_contrib(pca.model, "var", axes = 1)
+a
+
+b <- fviz_contrib(pca.model, "var", axes = 2)
+b
+
+c <- fviz_contrib(pca.model, "var", axes = 3)
+c
+```
+
+
+# Exercise 8: Contribution to the Principal Components
+```{r}
+corrplot(var$contrib, is.corr = F)
+```
+
+
+# Exercise 9: Analisis de los Componentes
+Del análisis de componentes principales podemos concluir que las variables se agrupan en tres grandes grupos:  
+
+a) **Componente 1**: la asociación de las variables Na-K-Mg-Alk-Cl-B-TDS están relacionadas con salmueras procedentes de la cuenca sedimentaria. La relación tan alta con el TDS implica que estas aguas son las responsables del incremento de la salinidad de los acuíferos.  
+
+b) **Componente 2**: la asociación entre Ca-NO3-SO4 corrobora la hipótesis de la contaminación producida por la actividad agrícola debido al uso de fertilizantes de sulfato amónico y/o cálcico.  
+
+c) **Componente 3**: las variables pH-Ca-Alk-SiO2 están relacionadas con el lixiviado de las rocas volcánicas permeables (silicatos ferromagnesicos) ricas en CO2 de origen volcánico. Este hecho se refleja en la relación inversa entre el pH y la alcalinidad. 
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+require(knitr)
+knitr::include_graphics('E:/1.Data/6. MONTAJE DE CURSOS/5. Geostatistics/BS_GROUP_2018/Multivariate_Statistical_Analysis/R_Exercises/Principal_Component_Analysis-PCA/mapa3f.png')
+```
+
+Mapa de distribuciones de los tres factores obtenidos en el ACP. (en  Aiuppa, A., Bellomo, S., Brusca, L., D’Alessandro, W., Federico, C. (2003) Natural and anthropogenic factors affecting groundwater quality of an active volcano - Mt. Etna, Italy. Applied Geochemistry, 18, 863–882).
+
+
+
+# Exercise 10 (optional): Hierarchical Clustering on Principal Components (HCPC)
+El análisis factorial y el analisis de componentes principales en conjunto con la agrupación jerárquica, son herramientas muy complementarias para explorar datos.
+
+En el caso de un conjunto de datos multidimensionales que contienen variables continuas, el análisis de componentes principales (PCA) se puede utilizar para reducir la dimensionalidad de los datos en pocas variables continuas (es decir, componentes principales) que contienen la información más importante en los datos. El paso de PCA se puede considerar como un paso de eliminación de ruido que puede conducir a un agrupamiento más estable. Esto es muy útil si tiene un gran conjunto de datos con múltiples variables.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+knitr::include_graphics('E:/1.Data/6. MONTAJE DE CURSOS/5. Geostatistics/BS_GROUP_2018/Multivariate_Statistical_Analysis/R_Exercises/Principal_Component_Analysis-PCA/program_structure.png')
+```
+
+```{r, e10, warning=FALSE, message=FALSE}
+library(FactoMineR)
+pca.model2 = FactoMineR::PCA(acuiferos[, 3:15], ncp = 3, graph = FALSE)
+hcpc <- FactoMineR::HCPC(pca.model2, graph = FALSE)
+
+factoextra::fviz_dend(hcpc, cex = 0.8, palette = "Dark2", rect = T, rect_fill = T, rect_border = "Dark2", show_labels = F) #takes too long
+
+factoextra::fviz_cluster(hcpc, palette = "Dark2", show.clust.cent = T, main = "Factor Map", labelsize = 1)
+```

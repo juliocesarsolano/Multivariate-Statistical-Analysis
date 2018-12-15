@@ -1,0 +1,5 @@
+"0","require(knitr)
+"
+"2","Loading required package: knitr
+"
+"0","knitr::include_graphics('rank.png')"

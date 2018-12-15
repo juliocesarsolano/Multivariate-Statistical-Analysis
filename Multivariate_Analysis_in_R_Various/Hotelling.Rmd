@@ -1,0 +1,560 @@
+---
+title: "Hotelling's *T*^2^"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+params: 
+  fast: TRUE
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    fig_height: 4.16
+    fig_width: 6.5
+    highlight: kate
+    widescreen: yes
+    footer: <a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+bibliography: Loaded.bib
+csl: apa.csl
+---
+<meta name = "copyright" 
+content = "<a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+
+
+```{r setup,echo = FALSE,message = FALSE}
+library(magrittr)
+library(tables)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(broom)
+library(pander)
+library(MVN)
+library(scales)
+library(Hotelling)
+library(candisc)
+options(digits = 2)
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("missing","")
+
+pvalueAPA <- function(p, inline = FALSE, mindigits = 2, maxdigits = 3){
+  p.round <- ifelse(p > 0.5 * 10 ^ (-1 * mindigits),mindigits,maxdigits)
+  if (p > 0.5 * 10 ^ (-1 * p.round)) {
+    paste0(ifelse(inline,"$p=", ""),
+           sub(pattern = "0.", 
+               replacement = ".", 
+               formatC(p, p.round, format = "f")),
+           ifelse(inline,"$", ""))
+    } else {
+      paste0(ifelse(inline, "$p<","<"),
+             sub(pattern = "0.", 
+                 replacement =  ".",
+                 10 ^ (-1 * maxdigits)),
+             ifelse(inline,"$",""))
+    }
+  }
+
+rinline  <-  function(code) {
+  sprintf('``` `r %s` ```', code)
+}
+
+themeMod <- theme_grey() + 
+  theme(text = element_text(family = "serif", size = 10),
+        legend.position = "none",
+        axis.title.x = element_text(vjust = -0.75),
+        axis.title.y = element_text(vjust = 1.75))
+theme_set(themeMod)
+# Custom colors
+myFill <- function(...){
+  scale_fill_manual(values = alpha(c("royalblue", "firebrick", "darkorchid"),0.5),...)
+}
+scale_fill_discrete <- myFill
+myColor <- function(...){
+  scale_colour_manual(values = c("royalblue", "firebrick", "darkorchid"),...)
+}
+scale_colour_discrete <- myColor
+```
+
+# Why multivariate tests instead of multiple univariate tests?
+
+|   |1 Response Variable|2 or More  Response Variables|
+|---|:----------------:|:---------------------------:|
+|*1 Dichotomous Predictor* |*t*-test|Hotelling's *T^2^*|
+|*1 or More Polytomous Predictors*|ANOVA|MANOVA|
+|*1 or More Continuous Predictors*|Multiple Regression|Canonical Correlation Analysis|
+
+1. Same reason you do ANOVA instead of multiple *t*-tests.
+2. Univariate ANOVAs ignore the correlations among the response variables.
+3. In the same way that a case can be a multivariate outlier without being a univariate outlier on any single variable, there may be multivariate mean differences that are significant even though none of the univariate mean differences are significant. 
+
+# Univariate *t*-test
+
+$$H_0: \mu_1= \mu_2$$
+
+## Pooled Variance
+
+$$s_p^2=\frac{df_1s_1^2+df_2s_2^2}{df_1+df_2}$$
+
+$$\begin{align}t &= \frac{\bar{X}_1-\bar{X}_2}{\sqrt{s_p^2\left(\frac{1}{n_1}+\frac{1}{n_2}\right)}}\\
+t^2&=\frac{(\bar{X}_1-\bar{X}_2)^2}{s_p^2\left(\frac{1}{n_1}+\frac{1}{n_2}\right)}\\
+&=(\bar{X}_1-\bar{X}_2) \left(s_p^2\left(\frac{1}{n_1}+\frac{1}{n_2}\right)\right)^{-1}(\bar{X}_1-\bar{X}_2)
+\end{align}$$
+
+# 1 Dichotomous Predictor, Multiple Continuous Response Variables
+
+$$\begin{align}H_0:\boldsymbol{\mu_1} &= \boldsymbol{\mu_2}\\
+\begin{bmatrix}{\mu_{11}\\ \mu_{12}\\ \vdots\\ \mu_{1k}\\}\end{bmatrix}&=\begin{bmatrix}{\mu_{21}\\ \mu_{22}\\ \vdots\\ \mu_{2k}\\}\end{bmatrix}\end{align}$$
+
+## Univariate
+$$t^2=(\bar{X}_1-\bar{X}_2) \left(s_p^2\left(\frac{1}{n_1}+\frac{1}{n_2}\right)\right)^{-1}(\bar{X}_1-\bar{X}_2)$$
+
+
+
+## Multivariate
+
+$$T^2 = (\boldsymbol{\bar{X}}_1-\boldsymbol{\bar{X}}_2)' \left(\boldsymbol{S}_p^2\left(\frac{1}{n_1}+\frac{1}{n_2}\right)\right)^{-1}(\boldsymbol{\bar{X}}_1-\boldsymbol{\bar{X}}_2)$$
+
+### Pooled Covariance
+
+$$\boldsymbol{S}_p = \frac{df_1\boldsymbol{S}_1+df_2\boldsymbol{S}_2}{df_1+df_2}$$
+
+### *F*-test
+
+$$F(k, n_1 + n_2 - k - 1) = \frac{k (n_1 + n_2)}{n_1 + n_2 - k - 1}T^2$$
+
+# Example in R {.SectionSlide}
+
+```{r HotellingData, include=FALSE}
+set.seed(2)
+n <- 100
+TherapyType <- rbinom(n, 1, 0.5)
+mu <- c(10, 50)
+alpha1 <- c(0.3,-1.3)
+b <- rbind(mu,alpha1,alpha1 * -1)
+X <- cbind(rep(1,n),TherapyType,1 - TherapyType)
+rho <- 0.6
+ecov <- lavaan::cor2cov(matrix(c(1,rho,rho,1),2), sds = c(3,10))
+e <- mvtnorm::rmvnorm(n, sigma = ecov)
+DV <- X %*% b + e %>% set_colnames(c("IC","NST"))
+d <- data.frame(Therapy = factor(TherapyType, labels = c("Interpersonal", "Cognitive")),DV)
+haven::write_sav(d,"Hotelling.sav")
+```
+
+# Descriptives
+
+```{r}
+d %>% head %>% pander
+
+library(tables)
+tabular(Heading("N") * 1 * Format(round()) + 
+          (Heading("Interpersonal Conflict") * IC +
+             Heading("Negative Self-Talk") * NST ) *
+          (Heading("Mean") * mean + Heading("SD") * sd) *
+          Format(formatC(digits = 2, format = "f")) ~ 
+          Heading() * Therapy + 1, data = d) %>% 
+  pander(justify = "lcccc")
+```
+
+# Correlations
+
+```{r}
+d %>% 
+  select(-Therapy) %>% 
+  cor %>% 
+  pander
+```
+
+
+# Univariate t-tests and plots
+
+```{r}
+with(d, t.test(IC ~ Therapy, var.equal = T))
+ggplot(d, aes(Therapy,IC, fill = Therapy)) + 
+  geom_violin(color = NA) + 
+  stat_summary(fun.data = "mean_cl_normal", 
+               geom = "pointrange")
+with(d, t.test(NST ~ Therapy, var.equal = T))
+ggplot(d, aes(Therapy,NST, fill = Therapy)) + 
+  geom_violin(color = NA) + 
+  stat_summary(fun.data = "mean_cl_normal", 
+               geom = "pointrange")
+```
+
+# Using `Hotelling` package
+
+```{r, fig.height=6.5}
+library(Hotelling)
+(mHotelling <- hotelling.test(IC + NST ~ Therapy, data = d))
+ggplot(d, aes(IC,NST,color = Therapy)) + 
+  geom_point(alpha = 0.5) + 
+  stat_ellipse() + 
+  geom_point(data = d %>% 
+               group_by(Therapy) %>% 
+               summarise_each(funs(mean)), 
+             size = 3) +
+  theme(aspect.ratio = 1)
+```
+
+# Using `manova`
+
+```{r}
+mTherapy <- manova(cbind(IC,NST) ~ Therapy, data = d)
+# Multivariate summary
+mTherapy %>% summary
+# Univariate summaries
+mTherapy %>% summary.aov
+# More details with car::Manova
+library(car)
+lmModel <- lm(cbind(IC, NST) ~ Therapy, data = d)
+lmModel %>% 
+  Manova() %>% 
+  summary()
+
+lmModel$coefficients %>% 
+  pander()
+```
+
+# Assumptions
+
+Independent-Samples *t*-test | Independent-Samples Hotelling's *T*^2^
+:----------|:--------
+Normality | Multivariate Normality
+Independence | Independence (Dependent measures may be correlated)
+Homogeneity of Variance $(\sigma_1^2=\sigma_2^2)$|Homogeneity of Covariance $\boldsymbol{\Sigma_1=\Sigma_2}$
+
+
+# Multivariate Normality
+
+Normality of the residuals, that is.
+
+```{r}
+modRes <- lmModel$residuals
+library(MVN)
+mardiaTest(modRes)
+hzTest(modRes)
+roystonTest(modRes)
+```
+
+# Homogeneity of Covariance
+
+Box's M tests the equality of covariance matrices. It is extremely sensitive to normality violations.
+
+```{r}
+boxm <- biotools::boxM(d %>% select(IC, NST), d$Therapy)
+boxm$cov
+boxm$cov %>% lapply(cov2cor)
+boxm
+```
+
+# Effect Size
+
+## The Mahalanobis Distance
+
+What is the standardized multivariate distance between the means, accounting for correlations among the dependent measures?
+
+$$\hat{D} = \sqrt{\boldsymbol{(\bar{X}_1 - \bar{X}_2)'S^{-1}(\bar{X}_1 - \bar{X}_2)}}$$
+
+or
+
+$$D = \sqrt{\frac{(n_1 + n_2)T^2}{n_1 n_2}}$$
+
+```{r}
+MahaD <- sqrt((mHotelling$stats$nx +
+                 mHotelling$stats$ny) *
+                mHotelling$stats$statistic /
+                (mHotelling$stats$nx *
+                   mHotelling$stats$ny))
+```
+
+$$D = `r round(MahaD,2)`$$
+
+## Wilks's $\Lambda$
+
+Wilks's $\Lambda$ can be interpreted as the percentage of variance **not** explained by the independent variable. 
+
+$\eta^2 = 1 - \Lambda$ is therefore the percentage of variance explained.
+
+```{r}
+modelEtaSq <- heplots::etasq(lmModel, partial = FALSE)
+modelEtaSq
+```
+
+In this case, partial $\eta^2 = \eta^2 =$ Pillai's trace
+
+# Reporting Hotelling results
+
+```{r}
+ReportHotelling <- function(m){
+  paste0("$T^2=", formatC(m$stats$statistic, 
+                           digits = 2, 
+                           format = "f"), 
+         "$, 
+         $F(", m$stats$df[1],
+         ",", 
+         m$stats$df[2],") = ", 
+         formatC(m$stats$statistic * m$stats$m,
+                 digits = 2, 
+                 format = "f"), 
+         "$, ", 
+         pvalueAPA(m$pval, inline = T),
+         ", Mahalanobis $D=", 
+         formatC(sqrt((m$stats$nx + m$stats$ny) *
+                        m$stats$statistic / 
+                        (m$stats$nx * m$stats$ny)),
+                 digits = 2, 
+                 format = "f"),
+         "$")
+}
+```
+
+`r rinline("ReportHotelling(mHotelling)")`
+
+`r ReportHotelling(mHotelling)`
+
+After the completion of 20 sessions of therapy, the interpersonal therapy group and the cognitive therapy group were compared with respect to levels of interpersonal conflict and negative self-talk. It was hypothesized that interpersonal therapy would be better at reducing interpersonal conflict and that cognitive therapy would be better at reducing negative self-talk. A Hotelling *T*^2^ two independent group analysis indicated that the two groups differ in the expected direction, `r ReportHotelling(mHotelling)`. Interestingly, even though a significant amount of variance is explained ($\eta^2 =`r modelEtaSq`$), neither univariate *t*-test for the two dependent measures was significant, indicating that although the mean differences are not large, the pattern of mean differences is unusual enough to detected by the Hotelling *T*^2^ two independent group analysis. As seen in Figure X, interpersonal conflict and negative self-talk are strongly positively correlated (see Table X), but the group means are "correlated" in the opposite direction. 
+
+```{r, echo=FALSE, fig.height=6.5}
+ggplot(d, aes(IC,NST,color = Therapy)) + 
+  geom_point(alpha = 0.5) + 
+  stat_ellipse() + 
+  geom_point(data = d %>% 
+               group_by(Therapy) %>% 
+               summarise_each(funs(mean)), 
+             size = 3) + 
+  theme(aspect.ratio = 1)
+```
+
+# Nearly the same data but with different means...
+
+```{r, include=FALSE}
+set.seed(2)
+n <- 100
+TherapyType <- rbinom(n, 1, 0.5)
+mu <- c(10, 50)
+alpha1 <- c(0.3,1.3)
+b <- rbind(mu,alpha1,alpha1 * -1)
+X <- cbind(rep(1,n),TherapyType,1 - TherapyType)
+rho <- 0.6
+ecov <- lavaan::cor2cov(matrix(c(1,rho,rho,1),2), sds = c(3,10))
+e <- mvtnorm::rmvnorm(n, sigma = ecov)
+DV <- X %*% b + e %>% set_colnames(c("IC","NST"))
+d1 <- data.frame(Therapy = factor(TherapyType, labels = c("Interpersonal", "Cognitive")),DV)
+haven::write_sav(d,"Hotelling.sav")
+
+d1 %>% mutate(zIC = scale(IC), zNST = scale(NST), zDiff = zIC - zNST) %>% lm(zDiff ~ Therapy, data = .) %>% summary
+```
+
+```{r, fig.height=6.5}
+d1 %>% head %>% pander
+
+library(tables)
+
+# Univariate t-tests and plots
+with(d1, t.test(IC ~ Therapy, var.equal = T))
+with(d1, t.test(NST ~ Therapy, var.equal = T))
+
+
+lm(cbind(IC,NST) ~ Therapy, data = d1) %>% 
+  Manova() %>% 
+  summary()
+
+ggplot(d1, aes(IC,NST,color = Therapy)) + 
+  geom_point(alpha = 0.5) + 
+  stat_ellipse() + 
+  geom_point(data = d1 %>% 
+               group_by(Therapy) %>% 
+               summarise_each(funs(mean)), 
+             size = 3) +
+  theme(aspect.ratio = 1)
+
+
+```
+
+
+```{r, eval=FALSE, include=FALSE}
+themeMod <- theme_grey() + 
+  theme(text = element_text(family = "serif", size = 10),
+        legend.position = "none",
+        axis.title.x = element_text(vjust = -0.75),
+        axis.title.y = element_text(vjust = 1.75),
+        plot.margin = unit(c(0.05, 0.05, 0.5, 0.05), "cm"))
+theme_set(themeMod)
+# Custom colors
+myFill <- function(...){
+  scale_fill_manual(values = alpha(c("royalblue", "firebrick", "darkorchid"),0.5),...)
+}
+scale_fill_discrete <- myFill
+myColor <- function(...){
+  scale_colour_manual(values = c("royalblue", "firebrick", "darkorchid"),...)
+}
+scale_colour_discrete <- myColor
+set.seed(2)
+n <- 100
+TherapyType <- rbinom(n, 1, 0.5)
+mu <- c(10, 50)
+X <- cbind(rep(1,n),TherapyType,1 - TherapyType)
+rho <- 0.6
+ecov <- lavaan::cor2cov(matrix(c(1,rho,rho,1),2), sds = c(3,10))
+e <- mvtnorm::rmvnorm(n, sigma = ecov)
+alpha1 <- c(0.3,-1.3)
+b <- rbind(mu,alpha1,alpha1 * -1)
+DV <- X %*% b + e %>% set_colnames(c("IC","NST"))
+d <- data.frame(Therapy = factor(TherapyType, labels = c("Interpersonal", "Cognitive")),DV)
+  
+dCog <- d$Therapy == "Cognitive"
+
+radians <- seq(0,1,0.01) * 2 * pi
+radians <- radians[-length(radians)]
+
+
+vMean <- d %>% group_by(Therapy) %>% select(IC,NST) %>% summarise_each(funs(mean)) %>% ungroup %>% select(-Therapy)
+radius <- sum((vMean[1,] - vMean[2,]) ^2) ^ (0.5)
+vSD <- d %>% group_by(Therapy) %>% select(IC,NST) %>% summarise_each(funs(sd)) %>% ungroup %>% select(-Therapy) 
+unitCircle <- cbind(cos(radians), sin(radians)) %*% diag(vSD[2,]) * 0.4
+dc <- d
+dc[dCog,"IC"] <- dc[dCog,"IC"] - vMean$IC[2] + vMean$IC[1]
+dc[dCog,"NST"] <- dc[dCog,"NST"] - vMean$NST[2] + vMean$NST[1]
+i <- 22
+cnt <- 1000
+library(Cairo)
+for (i in 1:length(radians)) {
+  cnt <- cnt + 1
+  d1 <- dc 
+  d1[dCog,"IC"] <-  dc[dCog,"IC"] + unitCircle[i,1]  
+  d1[dCog,"NST"] <-  dc[dCog,"NST"] + unitCircle[i,2] 
+  m1 <- hotelling.test(IC + NST ~ Therapy, data = d1)
+  f <- bquote(T^2 == .(formatC(m1$stats$statistic, 2, format = "f")))
+  gg <- ggplot(d1, aes(IC,NST,color = Therapy)) + 
+    geom_point(alpha = 0.5) + 
+    stat_ellipse(segments = 200) + 
+    geom_point(data = d1 %>% 
+                 group_by(Therapy) %>% 
+                 summarise_each(funs(mean)), 
+               size = 3) + 
+    ylim(15,85) + 
+    xlim(0, 20) + 
+    annotate("text",10, 20, 
+             label = paste0("italic(T)^2 =='",
+                            formatC(m1$stats$statistic, 
+                                    digits = 2,
+                                    format = "f"),"'"),
+             color = ifelse(m1$pval < 0.05, 
+                            "firebrick", 
+                            "black"), 
+              parse = T,
+             vjust = -0.5, size = 3) +
+    theme(aspect.ratio = 1) +
+    geom_segment(data = data.frame(IC = 5, 
+                                   NST = 20, 
+                                   IC2 = 15, 
+                                   NST2 = 20, 
+                                   Therapy = "Cognitive"), 
+                 aes(xend = IC2, 
+                     yend = NST2), 
+                 color = "black") + 
+    geom_segment(data = data.frame(IC = seq(5,15,length.out = 11), 
+                                   NST = 20 + rep(-0.4,11), 
+                                   NST2 = 20 + rep(0.4,11), 
+                                   Therapy = "Cognitive"), 
+                 aes(xend = IC, 
+                     yend = NST2), 
+                 color = "black") + 
+    annotate("point", 5 + m1$pval * 10,20, color = ifelse(m1$pval <= 0.05, "firebrick", "black")) + 
+    annotate("text", 5 + m1$pval * 10, 20, color = ifelse(m1$pval <= 0.05, "firebrick", "black"), label = paste0("italic(p)==", m1$pval %>% formatC(2,format = "f")), parse = T, vjust = 1.5, size = 3) +
+    xlab("Interpersonal Conflict") + 
+    ylab("Negative Self-Talk") + 
+    theme(legend.position = "top") + 
+    annotate("text",c(5,15),20, label = c(0,1), hjust = c(1.3,-0.3), size = 4)
+  
+ggsave(filename = paste0("Plot/HotellingCircle",cnt,".png"),gg, height = 5, width = 5, family = "serif", type = "cairo-png", dpi = 300)
+}
+library(animation)
+ani.options(ani.width = 5, ani.height = 5, interval = 1/20, ani.dev = "png", ani.type = "png") #Animation options
+im.convert("Plot/HotellingCircle*.png", output = "HotellingCircle.gif", extra.opts = "-trim -density 200 -resize 40%", clean = T) #Make animated .gif
+
+# shell("convert  HotellingCircle.gif -resize 80%  HotellingCircle1.gif")
+```
+
+# Why similar mean differences have different *p*-values
+
+![](HotellingCircle.gif)
+
+`Interpersonal Conflict` and `Negative Self-Talk` are positively correlated. 
+
+* If the means are different in the same direction as the correlation, a larger difference is needed for it to be "significant."
+* If the means are different in the opposite direction as the correlation, a smaller difference is needed for it to be "significant."
+
+This is directly analogous to the concept of a *multivariate outlier*. Compared to the `Interpersonal Therapy` group, each member of the `Cognitive Therapy` group is more outlier-ish when the `Cognitive` group mean is to the northwest or southeast of the `Interpersonal` group mean. 
+
+That is, the two groups are more distinctly different from each other when their means have a correlation that is opposite to the overall correlation.
+
+
+# Hypothesis-Error Plots (heplots)
+
+If the line is larger than the error ellipse, the effect is significant. The direction of the line tells you where the effect is.
+
+```{r, fig.height=6}
+library(heplots)
+par(pty = "s")
+heplot(lmModel)
+```
+
+Here we see that the means are "negatively correlated" whereas the errors are positively correlated. This means that in the `interpersonal` group, score profiles were more `IC` < `NST` compared to the `cognitive` group.
+
+To verif that that this is true, I calculated the difference in z-scores of the two variables and then compared the two group means.
+
+```{r}
+zd <- d %>% mutate(zIC = scale(IC), 
+             zNST = scale(NST), 
+             zMoreICThanNST = scale(zIC - zNST)) 
+
+zd %>% group_by(Therapy) %>% summarise(.)
+
+tabular(zMoreICThanNST~(Heading() * Therapy) * (mean  + sd), data = zd) %>% pander
+
+ggplot(zd, aes(Therapy, zMoreICThanNST)) + 
+  geom_violin() + 
+  stat_summary(fun.data = "mean_cl_normal")
+
+lm(zMoreICThanNST ~ Therapy, data = zd) %>% 
+  summary
+```
+
+
+In the non-significant data set, you can see that the means are positively correlated.
+
+```{r, fig.height=6}
+par(pty = "s")
+heplot(lm(cbind(IC, NST) ~ Therapy, data = d1))
+```
+
+# Canonical Variates
+
+```{r}
+library(candisc)
+canModel <- lmModel %>% candisc
+canModel %>% summary
+canModel$coeffs.raw
+canModel$coeffs.std
+canModel$structure
+CV = canModel$scores
+lm(Can1 ~ Therapy, CV) %>% summary
+lmModel %>% manova %>% summary
+canModel %>% plot
+ggplot(CV, aes(Therapy, Can1)) + geom_violin() + stat_summary(fun.data = "mean_cl_normal")
+```
+
+
+# References
+
+In making these slides, I relied heavily on:
+
+Schumacker, R. E. (2016). *Using R with multivariate statistics*. Thousand Oaks, CA: Sage.

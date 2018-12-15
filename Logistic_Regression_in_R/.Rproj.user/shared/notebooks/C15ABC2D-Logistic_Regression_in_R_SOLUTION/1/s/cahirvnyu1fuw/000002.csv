@@ -1,0 +1,5 @@
+"0","missmap(rain_data,main=""Missing Values in Data Set"")  
+"
+"2","Error in missmap(rain_data, main = ""Missing Values in Data Set"") : 
+  could not find function ""missmap""
+"

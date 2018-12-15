@@ -1,0 +1,5 @@
+"0","decisionplot(knn.fit, rain_df.sub, class = ""Rain"", main = ""kNN (1)"")
+"
+"2","Error in Summary.factor(c(1L, 1L, 2L, 2L, 2L, 1L, 1L, 1L, 1L, 1L, 2L,  : 
+  ‘range’ not meaningful for factors
+"

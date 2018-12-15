@@ -1,0 +1,312 @@
+---
+title: "Multidimensional Scaling in R"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+params: 
+  fast: TRUE
+output: 
+  slidy_presentation: 
+    css: slidy.css
+    fig_caption: yes
+    highlight: kate
+    widescreen: yes
+    footer: <a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+bibliography: Loaded.bib
+csl: apa.csl
+---
+
+```{r setup, include=FALSE}
+options(digits = 2, scipen = 10)
+knitr::opts_chunk$set(echo = TRUE)
+ev <- T
+library(MASS)
+library(klaR)
+library(magrittr)
+library(tables)
+library(knitr)
+library(pander)
+library(dplyr)
+library(ggplot2)
+library(rgl)
+setupKnitr()
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("table.style","rmarkdown")
+panderOptions("missing","")
+```
+
+```{r MakeData, include = FALSE}
+set.seed(1)
+library(lavaan)
+m <- "
+g =~ 0.8 * Literacy + 0.8 * Numeracy + 0.9 * IQ + 0.3 * Openness
+w =~ 0.85 * Conscientiousness + 0.6 * Ambition  
+Income ~ 0.6 * g + 0.8 * w
+"
+n <- 1000
+d <- simulateData(m,sample.nobs = n, standardized = TRUE)
+apply(d,2,mean)
+
+hs <- sample(c(0,1,2),size = n,prob = c(0.75,0.15,0.10), replace = TRUE)
+d$HighSchool <- factor(hs, labels = c("Diploma","No Diploma","GED"))
+dropout <- (hs == 1) * 1
+GED <- (hs == 2) * 1
+d$IQ <- round((d$IQ + -1.3 * dropout + -0.3 * GED) * 15 + 100)
+d$Literacy <- round((d$Literacy + -1.3 * dropout + -0.3 * GED) * 100 + 500)
+d$Numeracy <- round((d$Numeracy + -1.7 * dropout + -0.5 * GED) * 100 + 500)
+d$Conscientiousness <- round((d$Conscientiousness + -1.5 * dropout + -1.5 * GED) * 10 + 50)
+d$Ambition <- round((d$Ambition + -0.5 * dropout + 0 * GED) * 10 + 50)
+d$Income <- round(100 * ((d$Income - 1.5 * dropout - 1.1 * GED + 8.5) ^ 3))
+# write.csv(x = d,file = "H:\\web\\444\\DFA.csv",row.names = F)
+
+```
+
+
+# Multidimensional Scaling is an exploratory technique
+
+Distances between variables are used to calculate a map, from which information about the structure of the domain is inferred.
+
+- Metric (Distance has a meaninful metric common to all items)
+- Non-metric (Variables may have an ordinal metric)
+- Generalized (Distances are applied in non-euclician space)
+
+# Distances
+
+## Euclidian Distance
+
+$$\begin{align}d &= \left\| \mathbf{x} - \mathbf{y} \right\|\\ &= \sqrt{(\mathbf{x}-\mathbf{y})\cdot(\mathbf{x}-\mathbf{y})}\\ &= \sqrt{(x_1-x_2)^2 + (y_1-y_2)^2}\end{align}$$
+
+```{r, echo=F}
+par(pty = "s")
+plot(c(1,2),c(4,-2), xlim = c(-5,5), ylim = c(-5,5), axes = F, ann = F, pch = 16)
+axis(1,pos = 0, at = c(-5:-1,1:5),tcl = 0.25, padj = -1)
+axis(1,pos = 0, at = c(-5:-1,1:5),tcl = -0.25, labels = F)
+axis(2,pos = 0, las = 1,at = c(-5:-1,1:5), tcl = 0.25, hadj = 0)
+axis(2,pos = 0, las = 1,at = c(-5:-1,1:5), tcl = -0.25, labels = F)
+text(c(1,2),c(4,-2), labels = c("(1,4)","(2,-2)"), pos = 4)
+shape::Arrows(x0 = 1,y0 = 4,x1 = 2,y1 = -2, arr.adj = 1, code = 3)
+p1 <- c(1,4)
+p2 <- c(2,-2)
+p12 <- (p1 + p2) / 2
+diff12 <- p2 - p1
+d <- sqrt(diff12 %*% diff12)
+theta <- atan(diff12[2] / diff12[1])
+text(p12[1],p12[2],bquote(d == .(round(d,2))), srt = theta * 180 / pi, adj = c(0.5,-.5))
+```
+
+```{r, eval = F}
+ds <- dist(d)
+```
+
+## Mahattan Distance (City Block Distance)
+
+$$d = |x_1-x_2| + |y_1-y_2|$$
+
+```{r, echo=F}
+par(pty = "s")
+plot(c(1,2),c(4,-2), xlim = c(-5,5), ylim = c(-5,5), axes = F, ann = F, pch = 16)
+title("Manhattan Distance = 6 + 1 = 7")
+abline(h = c(-5:-1,1:5),col = "gray80", lty = 3)
+abline(v = c(-5:-1,1:5),col = "gray80", lty = 3)
+axis(1,pos = 0, at = c(-5:-1,1:5),tcl = 0.25, padj = -1)
+axis(1,pos = 0, at = c(-5:-1,1:5),tcl = -0.25, labels = F)
+axis(2,pos = 0, las = 1,at = c(-5:-1,1:5), tcl = 0.25, hadj = 0)
+axis(2,pos = 0, las = 1,at = c(-5:-1,1:5), tcl = -0.25, labels = F)
+
+text(c(1,2),c(4,-2), labels = c("(1,4)","(2,-2)"), pos = 4)
+shape::Arrows(x0 = 1,y0 = 4,x1 = 1,y1 = -2, arr.adj = 1, code = 3,arr.width = 0.1,arr.length = 0.2)
+shape::Arrows(x0 = 1,y0 = -2,x1 = 2,y1 = -2, arr.adj = 1, code = 3,arr.width = 0.1,arr.length = 0.15)
+p1 <- c(1,4)
+p2 <- c(2,-2)
+p12 <- (p1 + p2) / 2
+diff12 <- p2 - p1
+d <- sqrt(diff12 %*% diff12)
+theta <- atan(diff12[2] / diff12[1])
+text(1.5,-2,bquote(d == 1), pos = 1)
+text(1,1,bquote(d == 6), srt = -90, adj = c(0.5,1))
+```
+
+```{r, eval = F}
+ds <- dist(d, "manhattan")
+```
+
+
+# Assumptions
+
+# Calculating Distances
+
+
+```{r}
+d <- read.csv("http://my.ilstu.edu/~wjschne/444/DFA.csv") %>% select(-HighSchool, -Income)
+z <- d %>% scale
+EuclidianD <- z %>% t %>% dist(method = "euclidian")
+
+EuclidianMDS <- EuclidianD %>% 
+  cmdscale(k = 2) %>% 
+  as.data.frame()
+ggplot(EuclidianMDS, aes(V1, V2)) + geom_text(aes(label = rownames(EuclidianMDS)), angle = 0, hjust = 0.5) + expand_limits(x = c(-20,30))
+
+ManhattanD <- z %>% t %>% dist(method = "manhattan")
+ManhattanMDS <- ManhattanD %>% 
+  cmdscale(k = 2) %>% 
+  as.data.frame()
+ggplot(ManhattanMDS, aes(V1, V2)) + geom_text(aes(label = rownames(ManhattanMDS)), angle = 0, hjust = 0.5) + expand_limits(x = c(-450,700))
+```
+
+# 100 Best Bands according to Rolling Stone (40 to 100)
+
+```{r}
+# bands <- readr::read_csv("bands.csv") %>% select(-V) %>% as.matrix 
+bands <- readxl::read_excel("bands.xlsx") 
+glimpse(bands)
+bands <- bands[,2:66]
+bands[is.na(bands)] <- 0
+bands <- as.matrix(bands + t(bands))
+plot(bands %>% cmdscale, type = "n", bty = "n", axes = F, ann = F)
+text(bands %>% cmdscale,labels = colnames(bands),cex = 0.5, xpd = F)
+m2 <- bands %>% cmdscale(eig = T)
+m2$GOF
+m2$eig %>% plot
+
+m3 <- bands %>% cmdscale(eig = T, k = 3)
+m3$GOF
+
+```
+
+GOF reports P~2~ and the Mardia criterion, two measures of goodness-of-fit that range from 0 (poor) to 1 (perfect).
+
+P~2~ is the sum of the eigenvalues extracted divided by the sum of the absolute values of all the eigenvalues.
+
+```{r}
+P2 <- (m3$eig[1:3] %>% abs %>% sum) / (m3$eig %>% abs %>% sum)
+P2
+```
+
+Mardia's Criterion is similar to P~2~ except that the eigenvalues are squared.
+
+```{r}
+Mardia <- sum(m3$eig[1:3] ^ 2) / sum(m3$eig ^ 2)
+Mardia
+nonmds <- isoMDS(bands, k = 2)
+nonmds$stress
+plot(nonmds$points, type = "n", axes = F, ann = F)
+text(nonmds$points,labels = colnames(bands), cex = 0.5)
+```
+
+
+# 3D
+```{r, webgl=TRUE, eval=T}
+library(rgl)
+plot3d(cmdscale(bands), axes = F, ann = F, type = "n")
+text3d(cmdscale(bands),texts = colnames(bands), cex = 0.75)
+```
+
+
+# Stress
+
+Rule of Thumb
+
+- 0 (Perfect)
+- 0.025 (Excellent)
+- 0.05 (Good)
+- 0.10 (Fair)
+- 0.20 (Poor)
+
+# You Try
+
+Make a .csv file with distances between each drink.
+
+```{r, echo = F}
+drinks <- c("Coke",
+            "Dr. Pepper",
+            "Mountain Dew",
+            "Pepsi",
+            "Root Beer",
+            "Sprite",
+            "Sunkist",
+            "7up")
+k <- length(drinks)
+dm <- matrix(NA,k,k)
+diag(dm) <- 0
+colnames(dm) <- rownames(dm) <- drinks
+dm %>% pander
+```
+
+# Non-Metric MDS
+
+To convert correlations to distances:
+
+$d = \sqrt{2(1-r)}$
+
+This formula is conveniently applied in `cor2dist` in the `psych` package.
+
+```{r}
+R <- read.csv("http://my.ilstu.edu/~wjschne/444/HW5.csv") %>% 
+  select(-X,-Employment) %>% 
+  rename(RD = ReadingDecoding,
+         RC = ReadingComprehension,
+         RF = ReadingFluency,
+         MC = Calculation,
+         MP = MathProblemSolving,
+         MF = MathFactFluency) %>% cor
+R %>% pander
+dR <- psych::cor2dist(R)
+dR %>% pander
+nonMetric2 <- MASS::isoMDS(dR, k = 2) 
+d <- data.frame(Dim1 = nonMetric2$points[,1],Dim2 = nonMetric2$points[,2], l = colnames(R))
+
+ggplot(d, aes(Dim1,Dim2, label = l)) + 
+  geom_text() +   
+  coord_equal()
+
+ggplot(d, aes(Dim1,Dim2, label = l))  + 
+  geom_polygon(data = d[c("Gc","Ga","Gwm"),], 
+               alpha = 0.5, 
+               fill = "red") + 
+  geom_polygon(data = d[c("RD","RC","RF"),], 
+               alpha = 0.5, 
+               fill = "darkred") + 
+  geom_polygon(data = d[c("MP","MC","MF"),], 
+               alpha = 0.5, 
+               fill = "darkblue") + 
+  geom_polygon(data = d[c("Gs","RF","MF"),], 
+               alpha = 0.5, fill = "royalblue") + 
+  geom_polygon(data = d[c("Gv","Glr","Gf"),], 
+               alpha = 0.5, 
+               fill = "darkorchid") + 
+  geom_text() +   
+  coord_equal()
+```
+
+A stress value of `r nonMetric2$stress`% is a fair fit.
+
+```{r, webgl = T}
+library(rgl)
+nonMetric3 <- MASS::isoMDS(dR, k = 3) 
+plot3d(nonMetric3$points[c("Gc","Ga","Gwm","RD","RC","RF","MP","MC","MF","Gs","RF","Gv","Glr","Gf"),],
+       type = "s", 
+       axes = F, 
+       xlab = "", 
+       ylab = "", 
+       zlab = "",
+       col = c(rep("red",3),rep("darkred", 3),rep("darkblue",3),rep("royalblue",2),rep("darkorchid",3)), alpha = 0.5)
+text3d(nonMetric3$points, texts = colnames(R))
+lines3d(nonMetric3$points[c("Gv","Glr","Gf","Gv"),], col = "darkorchid")
+lines3d(nonMetric3$points[c("Gs","RF","MF","Gs"),], col = "royalblue")
+lines3d(nonMetric3$points[c("Gc","Ga","Gwm","Gc"),], col = "red")
+lines3d(nonMetric3$points[c("RD","RC","RF","RD"),], col = "darkred")
+lines3d(nonMetric3$points[c("MP","MC","MF","MP"),], col = "darkblue")
+```
+
+A stress value of `r nonMetric3$stress`% is a good fit.
+
+
+
+

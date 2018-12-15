@@ -1,0 +1,114 @@
+---
+title: "Exploratory Factor Analysis - EFA"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Sep 07, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(111)
+```
+
+
+# Loading Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+library(psych)
+library(GPArotation)
+library(kableExtra)
+
+#Organizing Packge information for table
+packages <- c("psych", "GPArotation", "kableExtra")
+display <- c("Package","Title", "Maintainer", "Version", "URL")
+table <- matrix(NA, 1, NROW(display), dimnames = list(1, display))
+for(i in 1:NROW(packages)){
+list <- packageDescription(packages[i])
+table <- rbind(table, matrix(unlist(list[c(display)]), 1, NROW(display), byrow = T))
+}
+table[,NROW(display)] <- stringr::str_extract(table[,NROW(display)], ".+,")
+
+#Table of packages
+kable(table[-1,], format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Problem Definition
+Este proyecto proporcionara una guia paso a paso para realizar un Análisis Factorial Exploratorio (EFA). 
+
+
+# Exercise 1: Data Source
+```{r, e1, warning=FALSE, message=FALSE}
+efa_data <- read.csv("efa.csv", header=T, na.strings = c(""))
+
+str(efa_data)
+head(efa_data)
+describe(efa_data)
+```
+
+
+# Exercise 2: Analisis Paralelo
+El Análisis Paralelo (AP) selecciona los componentes o factores comunes que presentan valores propios mayores que los que se obtendrían por azar (Horn, 1965). La idea es: si la matriz analizada procediera de una población en que los ítems no estuvieran relacionados, ¿qué valores propios podrían alcanzar los factores comunes extraídos de esa matriz? Y ¿cuántos factores comunes de los que hemos obtenido sobre la matriz analizada superan esos valores propios "espurios"? La respuesta a esta pregunta ofrece el número correcto de factores comunes. Utilizaremos la función **fa.parallel()** del paquete psych.
+```{r, e2, warning=FALSE, message=FALSE}
+fa.parallel(efa_data) 
+```  
+
+El analisis paralelo sugiere que el numero de factores = 5 y el numero de componentes = 3.
+
+
+# Exercise 3: Very Simple Structure Method
+```{r, e3, warning=FALSE, message=FALSE}
+vss(efa_data)
+```
+
+
+# Exercise 4: Normality Test
+```{r, e4, warning=FALSE, message=FALSE}
+sapply(efa_data, shapiro.test)
+```
+
+
+# Exercise 5: Solucion Factorial	
+```{r, e5, warning=FALSE, message=FALSE}
+f.solution <- fa(efa_data, nfactors=5, rotate="oblimin", fm="minres")
+
+print(f.solution$loadings, cutoff=0.3)
+```
+
+
+# Exercise 6: Grafica de las Cargas de los Factores	
+```{r, e6, warning=FALSE, message=FALSE}
+plot(f.solution, title="Factor loadings")
+```
+
+
+# Exercise 7: Structural Diagram	
+```{r, e7, warning=FALSE, message=FALSE}
+fa.diagram(f.solution, main="Structural diagram")
+```
+
+
+# Exercise 8: Higher-order Factor Solution 	
+```{r, e8, warning=FALSE, message=FALSE}
+omega(efa_data, nfactors = 5, sl=FALSE, title="Higher-order Factor Solution")
+```
+
+
+# Exercise 9: Bifactor Solution	
+```{r, e9, warning=FALSE, message=FALSE}
+omega(efa_data, title="Bifactor Solution")
+```
+
+
+# Exercise 10: Clustering Solution	
+```{r, e10, warning=FALSE, message=FALSE}
+iclust(efa_data, title="Clastering Solution")
+```

@@ -1,0 +1,395 @@
+---
+title: "Logistic Regression to Predict Rain Probability in SEATAC International Airport"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Sep 07, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(101)
+```
+
+
+# Loading Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+library(ROCR)           # ROC Curve
+library(tidyverse)
+library(dplyr)
+library(Amelia)         # missmap function
+library(ModelMetrics)
+library(caTools)
+library(caret)          # excercise 14, train, confusionMatrix fucntions
+library(kableExtra)
+
+#Organizing Packge information for table
+packages <- c("ROCR", "tidyverse", "dplyr", "Amelia", "ModelMetrics", "caTools", "caret", "kableExtra")
+display <- c("Package","Title", "Maintainer", "Version", "URL")
+table <- matrix(NA, 1, NROW(display), dimnames = list(1, display))
+for(i in 1:NROW(packages)){
+list <- packageDescription(packages[i])
+table <- rbind(table, matrix(unlist(list[c(display)]), 1, NROW(display), byrow = T))
+}
+table[,NROW(display)] <- stringr::str_extract(table[,NROW(display)], ".+,")
+
+#Table of packages
+kable(table[-1,], format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Introduction and Problem Definition
+La Regresión Logística Simple, desarrollada por David Cox en 1958, es un método de regresión que estima la probabilidad de una variable cualitativa en función de una variable cuantitativa. Permite estudiar en qué medida variaciones de una variable continua independiente influyen en una variable cualitativa dependiente.
+
+      Una de las principales aplicaciones de la regresión logística es el análisis discriminante, en el que las observaciones se clasifican en un grupo u otro dependiendo del valor que tome la variable empleada como predictor. Por ejemplo, clasificar a un individuo desconocido como hombre o mujer en función del tamaño de la mandíbula. Si bien es posible emplear regresión logística para variables cualitativas con más de dos niveles, no es recomendable, en su lugar es preferible emplear Lineal Discriminant Analysis (LDA), Quadratic Discriminat Analysis (QDA) o K-NearestNeighboirs (K-NN).
+
+Este proyecto proporcionar una guia paso a paso para construir un modelo de regresion logistica utilizando R. En este caso, usaremos una 'regresion logistica binomial', ya que la variable de decision solo puede tener dos valores. Sin embargo, tambien podemos predecir una variable de decision con mas de tres valores. Este tipo de regresion se llama "Regresion logistica multinomial". En este proyecto, predecimos la probabilidad de lluvia en el aeropuerto SEATAC en Seattle, USA. 
+
+
+# Exercise 1: Data Source
+```{r, e1, warning=FALSE, message=FALSE}
+rain_data <- read.csv("RainSeattle2016.csv", header=T, na.strings = c(""))
+
+str(rain_data)
+```
+
+
+# Variables Description
+
+**Rain**: is the column which we are trying to predict.  
+
+**NAME**: is the place where the weather data was recorded on respective DATE.  
+
+**PRCP and SNOW**: = Precipitation and Snow in inches  
+
+**SNWD**: = Snow depth.  
+
+**TAVG**: = Average Temperature in F.  
+
+**TMAX, TMIN**: = max and Min Temperature of the day in F.  
+
+**WDF5, WSF5**: - Direction of fastest 5-second wind in degree and Fastest 5-second wind speed respectively.  
+
+
+# Exercise 2: Missing Values
+Vamos a chequear valores ausentes. Utilizaremos la funcion **missmap** que muestra valores ausentes en un mapa visual.
+```{r, e2, warning=FALSE, message=FALSE}
+missmap(rain_data, main="Missing Values in Data Set")  
+```  
+
+Vemos que tenemos lotes de valores ausentes en las variables: Fog, high winds, sleet, hail, smoke, thunder and heavy fog; por tanto estas variables no seran tenidas en cuenta en nuestro modelamiento. Las siguientes variables tampoco seran tenidas en cuenta: NAME, Days, DATE, PRCP y SNWD.
+
+```{r}
+rain_df <- subset(rain_data, select=c(1,3,4,5,7,8,9,10,11,12,13))
+head(rain_df)
+```
+
+Verifiquemos ahora si nuestro set de datos tiene valores "NA". Una de las maneras mas comunes de tratar esto es excluir las filas que contienen valores "NA"s, o ajustar el valor faltante: media, mediana de cada columna, etc. Una alternativa más elegante consiste utilizar la función **mice()** del paquete mice, utilizando RandomForest.  
+
+```{r}
+sapply(rain_df, function(x) sum(is.na(x)))
+```
+
+Vemos que no tenemos valores NA. 
+
+
+# Exercise 3: Categorization of Variables
+```{r, e3, warning=FALSE, message=FALSE}
+# a.
+rain_df$Rain <- factor(rain_df$Rain)
+rain_df$Season <- factor(rain_df$Season, ordered = FALSE)
+
+# Contrasts
+contrasts(rain_df$Rain)
+contrasts(rain_df$Season)
+
+# b.
+rain_df$DATE <- as.Date(rain_df$DATE,'%m/%d/%Y')
+
+str(rain_df)
+```
+
+
+# Exercise 4: Random Sampling (Train and Test)
+Dividiremos el 70% de los datos para training y el 30% restante para test.
+```{r, e4, warning=FALSE, message=FALSE}
+split <- sample.split(rain_df$Rain, SplitRatio = 0.7)
+
+train <- subset(rain_df, split==TRUE)
+table(train$Rain)
+
+test <- subset(rain_df, split==FALSE)
+table(test$Rain)
+```
+
+
+# Exercise 5: Fit the Model
+```{r, e5, warning=FALSE, message=FALSE}
+# Exploratory Data Analysis
+featurePlot(x = rain_df[, 4:11],
+                  y = rain_df$Rain,
+                  plot = "box",
+                  ## Pass in options to bwplot() 
+                  scales = list(y = list(relation="free"),
+                                x = list(rot = 90)),
+                  layout = c(4,2 ),
+                  auto.key = list(columns = 2))
+
+glm1 <- glm(Rain ~ Season+AveWind+SNOW+TAVG+TMAX+TMIN+WDF5+WSF5, family = binomial(link = "logit"), data = train)
+
+# Model Statistics
+summary(glm1)
+```
+
+
+# Exercise 6: Reduced Model	
+```{r, e6, warning=FALSE, message=FALSE}
+RedModel <- step(glm1)
+```
+
+
+# Exercise 7: Models Comparison
+R usa la estadística de Chi-cuadrado para calcular el valor p, que se usa para tomar una decisión sobre la importancia estadística de los términos y el modelo. El valor p es una probabilidad que mide la evidencia contra la hipótesis nula (Coeficiente de la variable es igual a cero). Las probabilidades más bajas proporcionan evidencia más fuerte contra la hipótesis nula. Un estadístico chi-cuadrado suficientemente grande da como resultado un valor p pequeño, lo que indica que el término o modelo es estadísticamente significativo.
+```{r, e7, warning=FALSE, message=FALSE}
+glm2 <- glm(Rain ~ Season+AveWind+TMAX+TMIN+WSF5, family = binomial(link = "logit"), data = train)
+summary(glm2)
+
+glm3 <- glm(Rain ~ Season+TMAX+TMIN+WSF5, family = binomial(link = "logit"), data = train)
+summary(glm3)
+
+glm4 <- glm(Rain ~ TMAX+TMIN+WSF5, family = binomial(link = "logit"), data = train)
+summary(glm4)
+
+anova(glm2, glm3, glm4, test='Chisq')
+```
+
+
+Entre glm2 y glm3 el valor de P es significativo (P) y aceptamos la Hipotesis NULA (el coeficiente de **Ave.Wind** es cero).
+Entre glm3 y glm4 el valor de P es significativo y rechazamos la Hipotesis NULA (el coeficiente de **Season** es diferente de cero).
+Por lo tanto, la variable Season debe permanecer en el modelo. AIC para glm2 es 221.67, AIC para glm3 es 219.9, mientras que AIC para glm4 es 224.36; es otra indicación de que glm3 (**Rain ~ Season+TMAX+TMIN+WSF5**) es un mejor modelo (AIC más bajo).  
+
+
+# Exercise 8: The Best Model	
+```{r, e8, warning=FALSE, message=FALSE}
+glm5 <- glm(Rain ~ Season+TMAX+TMIN+WSF5, family = binomial(link = "logit"), data = train)
+summary(glm5)
+
+anova(glm5, test='Chisq')
+```
+
+Se considera que el modelo es útil si es capaz de mostrar una mejora explicando las observaciones respecto al modelo nulo (sin predictores). En este caso, el modelo obtenido sí es significativo.  
+
+
+# Exercise 9: IC at 95%	
+```{r, e9, warning=FALSE, message=FALSE}
+exp(cbind(OR = coef(glm5), confint(glm5)))
+```
+
+
+# Exercise 10: Predictions (las predicciones estan en probabilidad en lugar de log_ODDs)
+```{r, e10, warning=FALSE, message=FALSE}
+# With Train Set
+predicted.train <- ifelse(predict(glm5, newdata = train, type = "response") > 0.5, 1, 0)
+
+# Print the predictions:
+data.frame(Date = train$DATE, Rain_Actual = train$Rain, Predicted_Rain = predicted.train)
+
+
+# With Test Set
+predicted <- ifelse(predict(glm5, newdata = test, type = "response") > 0.5, 1, 0)
+
+# Print the predictions:
+data.frame(Date = test$DATE, Rain_Actual = test$Rain, Predicted_Rain = predicted)
+```
+
+
+# Exercise 11: Confusion Matrix
+```{r, e11, warning=FALSE, message=FALSE}
+# Training
+table(train$Rain, predicted.train)
+
+# Testing
+table(test$Rain, predicted)
+```
+
+El modelo es capaz de clasificar correctamente (111+95)/(111+95+25+25)=0.80 (80%) de las observaciones cuando se emplea el trainig data set. Por otro lado, el modelo es capaz de clasificar correctamente (43+43)/(43+43+9+15)=0.78 (78%) de las observaciones cuando se emplea el testing data set.  
+
+
+# Exercise 12: Accuracy
+```{r, e12, warning=FALSE, message=FALSE}
+accuracy.train <- 1-mean(predicted.train != train$Rain)
+accuracy.train
+
+accuracy.test <- 1-mean(predicted != test$Rain)
+accuracy.test
+```
+
+La eaxactitud de nuestro modelo es `r toString(round(100*accuracy.test, digits = 1))`%. Este es un valor razonable para nuestro modelo. La precisión puede aumentarse al verificar la curva ROCR y hacer los ajustes necesarios en el umbral de probabilidad.
+
+
+# Exercise 13: ROC Curve
+```{r, e13, warning=FALSE, message=FALSE}
+ROCRPred <- prediction(predicted, test$Rain)
+ROCRperf <- performance(ROCRPred, measure='tpr', x.measure='fpr')
+
+# Plot the ROC Curve
+plot(ROCRperf, colorize=TRUE)
+abline(0, 1, lty = 2)
+
+# Calculate the Area under curve(AUC)
+auc <- auc(test$Rain, predicted)
+auc
+```
+
+AUC is `r toString(round(100*auc, digits = 1))`%, lo cual indica que nuestro modelo es bueno.
+
+
+
+## Exercise 14: Conclusión (Modelo Logit) 
+
+El modelo logístico creado para predecir la probabilidad de lluvia a partir de Season, TMAX, TMIN y WSF5 es en conjunto significativo acorde al Likelihood ratio. Los p-value de los predictores son significativos.
+
+```{r, echo=F}
+knitr::include_graphics("E:/1.Data/6. MONTAJE DE CURSOS/5. Geostatistics/BS_GROUP_2018/Multivariate_Statistical_Analysis/R_Exercises/Logistic_Regression_in_R/modelologit.png")
+```
+
+
+$$ logit(Rain) = −3.1920 -0.43725*SeasonSpring -1.37229*SeasonSummer +0.79476*SeasonWinter -0.27064*TMAX + 0.37092*TMIN + 0.11216*WSF5 $$
+
+$$ P(Rain) = \frac{e^logit(Rain)}{1 + e^logit(Rain)} $$
+
+```{r, pot, warning=FALSE, message=FALSE}
+library(popbio)
+logi.hist.plot(rain_df$TMAX, rain_df$Rain, logi.mod = 1, boxp = TRUE, type = "dit", col = "gray", xlabel = "TMAX", ylabel = "Pr(Rain = Yes)")
+```
+
+
+# Exercise 15: Visualization
+```{r, e15, warning=FALSE, message=FALSE}
+# decisionplot function
+# source: http://michael.hahsler.net/SMU/EMIS7332/R/viz_classifier.html
+
+decisionplot <- function(model, data, class = NULL, predict_type = "class",
+  resolution = 100, showgrid = TRUE, ...) {
+
+  if(!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,1:2]
+  k <- length(unique(cl))
+
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+
+  # make grid
+  r <- sapply(data, range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+
+  ### guess how to get class labels from predict
+  ### (unfortunately not very consistent between models)
+  p <- predict(model, g, type = predict_type)
+  if(is.list(p)) p <- p$class
+  p <- as.factor(p)
+
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(xs, ys, z, add = TRUE, drawlabels = FALSE,
+    lwd = 2, levels = (1:(k-1))+.5)
+
+  invisible(z)
+}
+
+
+
+
+# Data Subset
+rain_df.sub <- subset(rain_df, select=c(TMAX, WSF5, Rain))
+
+# Plot XY
+plot(rain_df.sub[, 1:2], col = rain_df.sub[, 3], main = "Scatterplot")
+
+
+# Plot Logistic Regression fit
+model <- glm(Rain ~ TMAX+WSF5, data = train, family=binomial(link='logit'))
+class(model) <- c("lr", class(model))
+predict.lr <- function(object, newdata, ...)
+  predict.glm(object, newdata, type = "response") > .5
+
+decisionplot(model, rain_df.sub, class = "Rain", main = "Logistic Regression")
+```
+
+
+# Exercise 15 (Bonus): Logistic Regression with k-fold Cross Validation using **caret**
+                                **ModernSchool Logistic Regression**
+Using ML algorithms for Supervised prediction: LOGISTIC REGRESSION with Caret package.                                 
+```{r, bonus1, warning=FALSE, message=FALSE}
+
+start.time <- Sys.time()
+
+# Change the name of Classes
+rain_df$Rain <- ifelse(rain_df$Rain == 1, "Yes", "No")
+rain_df$Rain <- factor(rain_df$Rain)
+
+inTrain <- createDataPartition(y = rain_df$Rain, p = 0.7, list = FALSE)
+training <- rain_df[inTrain,]; testing <- rain_df[-inTrain,]
+dim(training); dim(testing)
+table(training$Rain); table(testing$Rain)
+
+fitControl <- trainControl(# 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,           # number of folds
+                           repeats = 5,           # number of complete sets of folds to compute
+                           classProbs = TRUE,     # Evaluate performance using the following function
+                           summaryFunction = twoClassSummary,
+                           returnResamp = "final",
+                           savePredictions = T,   # for ROC
+                           allowParallel = TRUE   # Parallel processing
+                           )
+
+# Logistic Regression
+caret.logreg.fit <- train(Rain ~ Season+TMAX+TMIN+WSF5, 
+                data = training, 
+                preProc = c("center", "scale"),
+                method = "glm",
+                metric = "ROC",                    # Specify which metric to optimize
+                tuneLength = 10,
+                family = binomial(link = "logit"),
+                trControl = fitControl
+                )
+
+# Print model results
+print(caret.logreg.fit, digits = 3)
+print(caret.logreg.fit$finalModel, digits=3)
+
+# VImportance of Variable
+plot(varImp(caret.logreg.fit, scale = TRUE))
+
+# Model Performance: Making Test Set Predictions
+pred <- predict(caret.logreg.fit, newdata = testing)
+confusionMatrix(pred, testing$Rain, positive = "Yes")
+```
+
+La matriz de confusión muestra que el modelo está haciendo un buen trabajo de clasificación. La precisión general es del 83%, mientras que la sensibilidad es del 88% y la especificidad es del 78%.  
+
+
+```{r}
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+time.taken
+```
+
+
+#===================================
+# HELP:
+https://rpubs.com/Joaquin_AR/229736
+

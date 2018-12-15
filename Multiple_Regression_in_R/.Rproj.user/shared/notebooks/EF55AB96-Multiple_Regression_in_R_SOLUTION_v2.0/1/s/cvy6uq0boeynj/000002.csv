@@ -1,0 +1,4 @@
+"0","out.model <- lm(Life.Exp ~ ., data=state77)
+"
+"2","Error in eval(predvars, data, env) : object 'Life.Exp' not found
+"

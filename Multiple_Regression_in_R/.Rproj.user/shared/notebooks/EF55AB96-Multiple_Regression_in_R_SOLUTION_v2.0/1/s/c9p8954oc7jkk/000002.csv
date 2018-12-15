@@ -1,0 +1,4 @@
+"0","print(dfSummary(dfstat77, graph.magnif = 0.75), method = 'render')
+"
+"2","Error in is.data.frame(x) : object 'dfstat77' not found
+"

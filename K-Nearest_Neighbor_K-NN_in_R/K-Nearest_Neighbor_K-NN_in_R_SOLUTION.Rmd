@@ -1,0 +1,241 @@
+---
+title: "K-Nearest Neighbor in R"
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Nov 05, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5              
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ set.seed(69069)
+```
+
+
+# Loading Libraries
+```{r library, echo=TRUE, warning=FALSE, message=FALSE}
+library(ROCR)           # ROC Curve
+library(pROC)           # Plot ROC Curve
+library(tidyverse)
+library(dplyr)
+library(Amelia)         # missmap function
+library(ModelMetrics)
+library(caTools)
+library(caret)          # excercise 5, train, confusionMatrix fucntions
+library(kableExtra)
+
+#Organizing Packge information for table
+packages <- c("ROCR", "tidyverse", "dplyr", "Amelia", "ModelMetrics", "caTools", "caret", "kableExtra")
+display <- c("Package","Title", "Maintainer", "Version", "URL")
+table <- matrix(NA, 1, NROW(display), dimnames = list(1, display))
+for(i in 1:NROW(packages)){
+list <- packageDescription(packages[i])
+table <- rbind(table, matrix(unlist(list[c(display)]), 1, NROW(display), byrow = T))
+}
+table[,NROW(display)] <- stringr::str_extract(table[,NROW(display)], ".+,")
+
+#Table of packages
+kable(table[-1,], format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Introduction and Problem Definition
+K Nearest Neighbors (k-vecinos más cercanos) es un algoritmo de aprendizaje automático supervisado no paramétrico utilizado para la clasificación y la regresión. Calcula la similitud entre las observaciones basándose en una función de distancia (generalmente euclidiana), y se prefiere cuando los datos son continuos.  
+
+Un nuevo punto X se clasifica en función de sus K vecinos más cercanos por distancia. El supuesto aquí es que las nuevas observaciones se comportarán como sus vecinos más cercanos.
+
+Este proyecto proporcionar una guia paso a paso para construir un modelo K-NN utilizando R. En este proyecto, predecimos la probabilidad de lluvia en el aeropuerto SEATAC en Seattle, USA. 
+
+
+# Exercise 1: Data Source
+```{r, e1, warning=FALSE, message=FALSE}
+rain_data <- read.csv("RainSeattle2016.csv", header=T, na.strings = c(""))
+
+str(rain_data)
+```
+
+
+# Variables Description
+
+**Rain**: is the column which we are trying to predict.  
+
+**NAME**: is the place where the weather data was recorded on respective DATE.  
+
+**PRCP and SNOW**: = Precipitation and Snow in inches  
+
+**SNWD**: = Snow depth.  
+
+**TAVG**: = Average Temperature in F.  
+
+**TMAX, TMIN**: = max and Min Temperature of the day in F.  
+
+**WDF5, WSF5**: - Direction of fastest 5-second wind in degree and Fastest 5-second wind speed respectively.  
+
+
+# Exercise 2: Missing Values
+Vamos a chequear valores ausentes. Utilizaremos la funcion **missmap** que muestra valores ausentes en un mapa visual.
+```{r, e2, warning=FALSE, message=FALSE}
+missmap(rain_data, main="Missing Values in Data Set")  
+```  
+
+Vemos que tenemos lotes de valores ausentes en las variables: Fog, high winds, sleet, hail, smoke, thunder and heavy fog; por tanto estas variables no seran tenidas en cuenta en nuestro modelamiento. Las siguientes variables tampoco seran tenidas en cuenta: NAME, Days, DATE, PRCP y SNWD.
+
+```{r}
+rain_df <- subset(rain_data, select=c(1,3,4,5,7,8,9,10,11,12,13))
+head(rain_df)
+```
+
+Verifiquemos ahora si nuestro set de datos tiene valores "NA". Una de las maneras mas comunes de tratar esto es excluir las filas que contienen valores "NA"s, o ajustar el valor faltante: media, mediana de cada columna, etc. Una alternativa más elegante consiste utilizar la función **mice()** del paquete mice (Imputación con RandomForest).
+
+```{r}
+sapply(rain_df, function(x) sum(is.na(x)))
+```
+
+Vemos que no tenemos valores NA. 
+
+
+# Exercise 3: Categorization of Variables
+```{r, e3, warning=FALSE, message=FALSE}
+# a.
+rain_df$Rain <- factor(rain_df$Rain)
+rain_df$Season <- factor(rain_df$Season, ordered = FALSE)
+
+# Contrasts
+contrasts(rain_df$Rain)
+contrasts(rain_df$Season)
+
+# b.
+rain_df$DATE <- as.Date(rain_df$DATE,'%m/%d/%Y')
+
+str(rain_df)
+```
+
+
+# Exercise 5: K-NN with k-fold Cross Validation using **caret**
+Using ML algorithms for Supervised prediction: K-NN with Caret package.                                 
+```{r, e5, warning=FALSE, message=FALSE}
+
+# Change the name of Classes
+rain_df$Rain <- ifelse(rain_df$Rain == 1, "Yes", "No")
+rain_df$Rain <- as.factor(rain_df$Rain)
+rain_df$Season <- as.factor(rain_df$Season)
+
+# Spliting data as training and test set. Using createDataPartition() function from caret
+inTrain <- createDataPartition(y = rain_df$Rain, p = 0.7, list = FALSE)
+training <- rain_df[inTrain,]; testing <- rain_df[-inTrain,]
+dim(training); dim(testing)
+table(training$Rain); table(testing$Rain)
+
+fitControl <- trainControl(# 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,                       # number of folds
+                           repeats = 3,                       # number of complete sets of folds to compute
+                           classProbs = TRUE,                 # Evaluate performance using the following function
+                           summaryFunction = twoClassSummary,
+                           savePredictions = T,               # for ROC
+                           allowParallel = TRUE               # Parallel processing
+                           )
+
+# Logistic Regression
+knn.fit <- train(Rain ~ Season+TMAX+TMIN+WSF5, 
+                data = training, 
+                preProc = c("center", "scale"),
+                method = "knn",
+                metric = "ROC",                               # Specify which metric to optimize
+                tuneLength = 10,
+                trControl = fitControl
+                )
+
+# Print results
+print(knn.fit, digits = 3)
+print(knn.fit$finalModel, digits=3)
+
+# Plotting yields Number of Neighbours Vs accuracy (based on repeated cross validation)
+plot(knn.fit)
+
+# Model Performance: get the confusion matrix to see accuracy value and other parameter values
+pred <- predict(knn.fit, newdata = testing)
+confusionMatrix(pred, testing$Rain, positive = "Yes")
+
+# Plot the ROC Curve and overall AUC
+#knnPredict <- predict(knn.fit, newdata = testing, type="raw")
+#ROCRPred <- prediction(knnPredict, testing$Rain)
+#ROCRperf <- performance(ROCRPred, measure='tpr', x.measure='fpr')
+
+# Plot the ROC Curve
+#plot(ROCRperf, colorize=TRUE)
+#abline(0, 1, lty = 2)
+
+# Calculate the Area under curve(AUC)
+#AUC <- auc(test$Rain, predicted)
+#AUC
+```
+
+La matriz de confusión muestra que el modelo está haciendo un buen trabajo de clasificación. La exactitud global es del 73% (el 73% de las veces predice correctamente), mientras que la sensibilidad es del 63% y la especificidad es del 83%. 
+
+
+# Exercise 6: Visualization
+```{r, e6, warning=FALSE, message=FALSE}
+# decisionplot function
+# source: http://michael.hahsler.net/SMU/EMIS7332/R/viz_classifier.html
+
+decisionplot <- function(model, data, class = NULL, predict_type = "class",
+  resolution = 100, showgrid = TRUE, ...) {
+
+  if(!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,1:2]
+  k <- length(unique(cl))
+
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+
+  # make grid
+  r <- sapply(data, range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+
+  ### guess how to get class labels from predict
+  ### (unfortunately not very consistent between models)
+  p <- predict(model, g, type = predict_type)
+  if(is.list(p)) p <- p$class
+  p <- as.factor(p)
+
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(xs, ys, z, add = TRUE, drawlabels = FALSE,
+    lwd = 2, levels = (1:(k-1))+.5)
+
+  invisible(z)
+}
+
+
+
+
+# Data Subset
+rain_df.sub <- subset(rain_df, select=c(TMAX, WSF5, Rain))
+
+# Plot XY
+plot(rain_df.sub[, 1:2], col = rain_df.sub[, 3], main = "Scatterplot")
+
+
+# K-NN fit (k=1)
+knn3.boundary1 <- knn3(Rain ~ TMAX+WSF5, data = rain_df.sub, k = 1)
+# Plot K-NN fit (k=1)
+decisionplot(knn3.boundary1, rain_df.sub, class = "Rain", main = "kNN (1)")
+
+# K-NN fit (k=7)
+knn3.boundary7 <- knn3(Rain ~ TMAX+WSF5, data = rain_df.sub, k = 7)
+# Plot K-NN fit (k=7)
+decisionplot(knn3.boundary7, rain_df.sub, class = "Rain", main = "kNN (7)")
+```

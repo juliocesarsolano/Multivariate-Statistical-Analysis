@@ -1,0 +1,293 @@
+---
+title: "Predicción del Consumo de Energia FC150 - Cerro Matoso S.A."
+author: "Created By Julio SOLANO"
+geometry: margin = 2cm
+date: "Jul 10, 2018"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 5
+    fig_width: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+
+# Resumen Ejecutivo
+Este trabajo se realiza en el marco del proyecto de mejoramiento y actualizacion del modelo geometalurgico de Cerro Matoso S.A.
+
+
+# Importacion de Datos    
+```{r, data, warning=FALSE, message=FALSE}
+data.raw <- read.csv("energia.FC150.csv", 
+                       header= TRUE,
+                       skip = 1)
+
+str(data.raw)
+mean <- round(mean(data.raw$ENERGY), digits = 2)
+sd <- round(sd(data.raw$ENERGY), digits = 2)
+```   
+
+
+# Deteccion y Eliminacion de Outliers
+Se utiliza el metodo de las distancias Cook's. En general, distancias Cook's mayores que 4 pueden influenciar significativamente el modelo.
+```{r, outliers, warning=FALSE, message=FALSE}
+fullModel.Temp <- lm(ENERGY ~ ., data=data.raw)
+cooksd <- cooks.distance(fullModel.Temp)
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+# add labels
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  
+
+# Observations
+influential.obs <- as.numeric(names(cooksd)[(cooksd > 4*mean(cooksd, na.rm=T))])  # influential row numbers
+influential.obs
+head(data.raw[influential.obs, ])  # influential observations (rows)
+
+# Nueva data sin Outliers
+data1 <- na.omit(data.raw[-influential.obs, ])
+str(data1)
+mean <- round(mean(data1$ENERGY), digits = 2)
+sd <- round(sd(data1$ENERGY), digits = 2)
+```   
+Se detectan `r toString(length(influential.obs))` observaciones con distancias Cook's mayores que 4, que pueden influenciar significativamente el modelo. Estas observaciones son retiradas de la data.
+
+
+# Eliminación de variables predictoras altamente correlacionadas, teniendo la multicolinealidad (Features Plot) 
+Se utiliza un enfoque alternativo basado en el Factor de Inflación de Varianza (Varianza Inflation Factor - VIF).  
+
+Como criterio, Si VIF es mayor que 10 se sugiere multicolinealidad y dichas variables predictoras deben ser retiradas.
+```{r, wcorr, warning=FALSE, message=FALSE}
+vif_func <- function(in_frame, thresh=10, trace=T,...){
+
+  library(fmsb)
+  
+  if(any(!'data.frame' %in% class(in_frame))) in_frame<-data.frame(in_frame)
+  
+  #get initial vif value for all comparisons of variables
+  vif_init<-NULL
+  var_names <- names(in_frame)
+  for(val in var_names){
+      regressors <- var_names[-which(var_names == val)]
+      form <- paste(regressors, collapse = '+')
+      form_in <- formula(paste(val, '~', form))
+      vif_init<-rbind(vif_init, c(val, VIF(lm(form_in, data = in_frame, ...))))
+      }
+  vif_max<-max(as.numeric(vif_init[,2]), na.rm = TRUE)
+
+  if(vif_max < thresh){
+    if(trace==T){ #print output of each iteration
+        prmatrix(vif_init,collab=c('var','vif'),rowlab=rep('',nrow(vif_init)),quote=F)
+        cat('\n')
+        cat(paste('All variables have VIF < ', thresh,', max VIF ',round(vif_max,2), sep=''),'\n\n')
+        }
+    return(var_names)
+    }
+  else{
+
+    in_dat<-in_frame
+
+    #backwards selection of explanatory variables, stops when all VIF values are below 'thresh'
+    while(vif_max >= thresh){
+      
+      vif_vals<-NULL
+      var_names <- names(in_dat)
+        
+      for(val in var_names){
+        regressors <- var_names[-which(var_names == val)]
+        form <- paste(regressors, collapse = '+')
+        form_in <- formula(paste(val, '~', form))
+        vif_add<-VIF(lm(form_in, data = in_dat, ...))
+        vif_vals<-rbind(vif_vals,c(val,vif_add))
+        }
+      max_row<-which(vif_vals[,2] == max(as.numeric(vif_vals[,2]), na.rm = TRUE))[1]
+
+      vif_max<-as.numeric(vif_vals[max_row,2])
+
+      if(vif_max<thresh) break
+      
+      if(trace==T){ #print output of each iteration
+        prmatrix(vif_vals,collab=c('var','vif'),rowlab=rep('',nrow(vif_vals)),quote=F)
+        cat('\n')
+        cat('removed: ',vif_vals[max_row,1],vif_max,'\n\n')
+        flush.console()
+        }
+
+      in_dat<-in_dat[,!names(in_dat) %in% vif_vals[max_row,1]]
+
+      }
+
+    return(names(in_dat))
+    
+    }
+  
+  }
+
+# The predictors
+predictores <- data1[,-12]
+vif_func(in_frame = predictores, thresh = 10, trace = T) # trace=T: text output is returned as the stepwise selection progre.
+```
+
+
+# Particion del Set de Datos (Training, Testing) 
+```{r, partition, warning=FALSE, message=FALSE}
+set.seed(12351) # setting seed to reproduce results of random sampling
+trainingRowIndex <- sample(1:nrow(data1), 0.85*nrow(data1))  # row indices for training data
+training <- data1[trainingRowIndex, ]  # model training data
+testing <- data1[-trainingRowIndex, ]  # test data
+dim(training); dim(testing)
+```
+
+
+# Analisis de la Variabilidad de las Variables (Removing Zero Covariates) 
+```{r, nsv, warning=FALSE, message=FALSE}
+library(caret)
+nzv = nearZeroVar(training, freqCut = 90/10, uniqueCut = 10, saveMetrics = TRUE)
+nzv
+```
+Se usa la función nearZeroVar() del paquete caret para buscar las variables que tengan “varianza casi cero”, aquellas que entre las dos categorías más numerosas tengan una relación de 90/10 y que tengan menos de 10 valores únicos. Dado que no hay ninguna con NZV=0, todas son utilizadas en el analisis. 
+
+
+# Eliminacion Variables NZV=0  (Data Cleanning) 
+No hay variables para eliminar.
+
+
+# Matriz de Correlacion (Features Plot) 
+Se usa la función findCorrelation() del paquete caret para buscar variables que esten correlacionadas por encima de un valor (cutoff= 0.8).
+```{r, matrix, warning=FALSE, message=FALSE}
+# Grafico 1, para plotear
+library("PerformanceAnalytics")
+tiff(file = "matrix_consumo.ENERGY.FC150.png", width=960, height=960, bg="white")
+chart.Correlation(training, histogram=TRUE, pch="*", method = c("spearman"))
+dev.off()
+
+chart.Correlation(training, histogram=TRUE, pch="*", method = c("spearman"))
+```
+
+
+# Modelo VIF (vif_func)
+Construiremos un modelo basado en las variables sugeridas por la funcion vif_func.
+```{r, vifmodel, warning=FALSE, message=FALSE}
+attach(training)
+vifModel <- lm(ENERGY ~ NIKILN+AL2O3KILN+MGOKILN+COALWET+CALCINE+NIMET+OVERUTILIZATION+TEMCALCINE-1, data = training)
+summary(vifModel)
+
+# Akaike Information Criterion
+AIC(vifModel)  # Calculate AIC
+
+# VIF
+library(car)
+vif(vifModel)
+```  
+
+
+# Modelo Completo: fullModel
+Construiremos un modelo completo utilizando todas las variables predictoras disponibles con NZV!=0.
+```{r, fullmodel, warning=FALSE, message=FALSE}
+fullModel <- lm(ENERGY ~ .-1, data = training)
+summary(fullModel)
+
+# Akaike Information Criterion
+AIC(fullModel)  # Calculate AIC
+
+# VIF
+vif(fullModel)
+```  
+
+
+# Un Buen Modelo: goodModel
+Ahora usaremos un algoritmo de regresion lineal "stepwise" **backward and forward** para seleccionar variables estadisticamente significativas. Se trata de una combinación de la selección forward y backward. Se inicia igual que el forward pero tras cada nueva incorporación se realiza un test de extracción de predictores no útiles como en el backward. Presenta la ventaja de que si a medida que se añaden predictores, alguno de los ya presentes deja de contribuir al modelo, se elimina.
+```{r, good, warning=FALSE, message=FALSE}
+goodModel <- step(fullModel, direction = "both") # Stepwise method
+summary(goodModel)
+
+# Akaike Information Criterion
+AIC(goodModel)  # Calculate AIC
+
+# VIF
+vif(goodModel)
+```  
+
+
+# Modelo Final Sugerido
+```{r, finalModel, warning=FALSE, message=FALSE}
+EnergyModel <- lm(ENERGY ~  ORETOKN150+OVERUTILIZATION-1, data=training)
+summary(EnergyModel)
+par(mfrow=c(2, 2))
+plot(EnergyModel)
+shapiro.test(EnergyModel$residuals)
+
+# Akaike Information Criterion
+AIC(EnergyModel)  # Calculate AIC
+
+# VIF
+vif(EnergyModel)
+
+# ANOVA para modelos anidados
+#anova(ENERGYModel, vifModel, fullModel)
+```  
+
+
+# Validacion del Modelo Final: Calcular la Exactitud de las predicciones y el Errores (Min Max Accuracy and MARD)
+```{r, validacion, warning=FALSE, message=FALSE}
+ypred <- predict(EnergyModel, newdata = testing, se = TRUE) # Predicted vs Truth in test set
+actuals_preds <- data.frame(cbind(actuals=testing$ENERGY, predicteds=ypred$fit)) 
+correlation_accuracy <- cor(actuals_preds)
+correlation_accuracy
+actuals_preds # Los valores predecidos
+
+library(ggplot2); library(scales)
+ggplot(actuals_preds, aes(predicteds, actuals)) + 
+        geom_point() +
+        geom_abline(intercept = 0, slope = 1, colour = "red", size = 0.8) + 
+        scale_y_continuous(breaks= pretty_breaks()) +
+        expand_limits(x = 2000, y = 2000) +
+        labs(x = "Prediccion Modelo Consumo de ENERGY FC01 [MWH]") + 
+        labs(y = "Consumo de ENERGY FC01 Actual [MWH]") + 
+        labs(title = "Prediccion Consumo de ENERGY FC01 - Testing Data")
+
+
+# Min Max Accuracy (%)
+min_max_accuracy <- mean(apply(actuals_preds, 1, min) / apply(actuals_preds, 1, max))
+round(min_max_accuracy, digits = 3)*100
+
+# Diferencia Relativa Absoluta Promedio en porcentaje -ARD(%)
+ARD <- mean(abs((actuals_preds$predicteds - actuals_preds$actuals)) / actuals_preds$actuals)  
+round(ARD, digits = 3)*100
+```  
+
+
+# K- Fold Cross Validation
+Es importante probar rigurosamente el rendimiento del modelo tanto como sea posible. Una forma es asegurarse de que la ecuación del modelo que se propone tiene funcione bien, cuando se 'construye' en un subconjunto diferente de datos de entrenamiento y se predice con los datos restantes.  
+
+Para hacer esto vamos a dividir los datos de entrada en 'k' porciones de muestras aleatorias mutuamente excluyentes. Manteniendo cada porción como datos de prueba, construimos el modelo final sugerido sobre los datos restantes (parte k-1) y calculamos el error cuadrático medio de las predicciones (MSE). Esto se hace para cada una de las porciones de muestra aleatoria 'k'. Luego, finalmente, se calcula el promedio de estos errores cuadráticos medios (para las porciones 'k'), y su equivalente RMSE (Root Mean Square Error or Deviation)  
+
+Al hacer esto, debemos verificar dos cosas:  
+
+=> Si la precisión de predicción del modelo no varía demasiado para una muestra en particular, y  
+=> Si las líneas de mejor ajuste no varían demasiado con respecto a la pendiente y el nivel.  
+
+En la grafica abajo, los simbolos pequeños son los valores predecidos mientras que los grandes son los valores actuales (reales).
+```{r, kfold, warning=FALSE, message=FALSE}
+library(DAAG)
+# Performs the CV
+cvResults <- suppressWarnings(CVlm(data=na.omit(data1),
+                                   form.lm=ENERGY ~ ORETOKN150+OVERUTILIZATION-1, 
+                                   m=5, 
+                                   dots=FALSE, 
+                                   seed=29, 
+                                   legend.pos="topleft",
+                                   printit=FALSE,
+                                   main="k- Fold Cross Validation"))  
+
+sqrt(attr(cvResults, 'ms')) # Root Mean Squared Error - RMSE (Error rate)
+```  
+
+
+# Conclusiones y Recomendaciones
+
+El Modelo final sugerido presenta una exactitud calculada a partir de los datos de prueba de `r toString(round(100*min_max_accuracy, digits = 1))`%, lo cual es aceptable. La diferencia relativa absoluta promedio o error del modelo es de `r toString(round(100*ARD, digits = 1))`%.  
+
+Los resultados de la validacion cruzada utilizando 5 porciones de muestras mutuamente excluyentes, revelan que, el modelo propuesto presenta una baja desviacion o dispersion de los datos en la prediccion, con un RMSE de `r toString(round(sqrt(attr(cvResults, 'ms')), digits = 1))` MWH, bastante bueno.

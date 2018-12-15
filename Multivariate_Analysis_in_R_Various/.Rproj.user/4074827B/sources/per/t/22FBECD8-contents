@@ -1,0 +1,279 @@
+---
+title: "Cluster Analysis in R"
+author: "W. Joel Schneider"
+date: "Psy444: Multivariate Analysis"
+params: 
+  fast: TRUE
+output: 
+  slidy_presentation: 
+    #css: slidy.css
+    fig_caption: yes
+    highlight: kate
+    widescreen: yes
+    footer: <a href = 'http://my.ilstu.edu/~wjschne/444/Psy444FA2015.html'>Multivariate Analysis</a>
+bibliography: Loaded.bib
+csl: apa.csl
+---
+
+```{r setup, include=FALSE}
+options(digits = 2, scipen = 10)
+knitr::opts_chunk$set(echo = TRUE)
+ev <- T
+library(tidyr)
+library(MASS)
+library(klaR)
+library(magrittr)
+library(tables)
+library(knitr)
+library(pander)
+library(dplyr)
+library(ggplot2)
+library(rgl)
+library(ape)
+library(Hmisc)
+setupKnitr()
+knit_hooks$set(familyserif = function(before, options, envir) {
+    if (before) par(family = "serif")  
+})
+opts_chunk$set(dev = "svglite", familyserif = TRUE)
+
+panderOptions("table.split.table",Inf)
+panderOptions("round",2)
+panderOptions("keep.trailing.zeros",TRUE)
+panderOptions("table.emphasize.rownames", FALSE)
+panderOptions("table.alignment.rownames", "left")
+panderOptions("table.style","rmarkdown")
+panderOptions("missing","")
+```
+
+# Cluster Analysis
+
+Grouping objects with similiar characteristics
+
+- Fixed Cluster
+- Hierarchical
+    + Divisive
+    + Agglomerative
+  
+# Agglomerative Hierarchical
+
+- Nearest cluster (using mean, median, or centroid)
+- Single (nearest neighbor)
+- Complete (least similar neighbor)
+
+## Data
+
+Rated bands from the *Rolling Stone* top 100 list on these characteristics:
+
+- Intellectual
+- Subversive
+- Energetic
+- Hard
+- Spicy Rhythm
+- Dance
+
+## Average method
+
+```{r}
+d <- read.csv("BandsCluster.csv")
+dplyr::glimpse(d)
+rownames(d) <- d$Band
+d$Band <- NULL
+hc <- hclust(dist(d), "average")
+plot(hc,cex = 0.5)
+clustlabs <- cutree(hc,k = 5)
+clustcol <- c("red","orange","yellow","green","blue")
+plot(hc, labels = clustlabs, cex = 0.5)
+plot(hc, hang = -1,cex = 0.5)
+# par(mar = c(3,1,1,8))
+```
+
+```{r, fig.height=11}
+library(ape)
+k <- 10
+clustlabs <- cutree(hc,k = k)
+clustcol <- rainbow(k, 0.5)
+plot(as.phylo(hc), 
+     type = "phylogram",
+     cex = 0.8, 
+     label.offset = 0.2, 
+     tip.color = clustcol[clustlabs])
+plot(as.phylo(hc), 
+     type = "cladogram", 
+     cex = 0.8, 
+     label.offset = 0.2, 
+     tip.color = clustcol[clustlabs])
+plot(as.phylo(hc), 
+     type = "unrooted",
+     cex = 0.5, 
+     tip.color = clustcol[clustlabs])
+plot(as.phylo(hc), 
+     type = "fan",
+     cex = 0.5, 
+     tip.color = clustcol[clustlabs])
+plot(as.phylo(hc), 
+     type = "radial", 
+     cex = 0.5,
+     tip.color = clustcol[clustlabs])
+
+plot(as.phylo(hc), 
+     type = "phylogram", 
+     cex = 0.5,
+     tip.color = clustcol[clustlabs])
+
+# Interesting code:
+# load code of A2R function
+source("http://addictedtor.free.fr/packages/A2R/lastVersion/R/code.R")
+# colored dendrogram
+op = par(bg = "#EFEFEF")
+A2Rplot(hc, k = 12, boxes = FALSE, col.up = "gray50", col.down = rainbow(12))
+```
+
+## Single (nearest neighbor)
+```{r}
+hc <- hclust(dist(d), "single")
+plot(hc,cex = 0.5)
+
+hc <- hclust(dist(d), "single")
+plot(hc,cex = 0.5)
+
+R <- read.csv("HW5.csv") %>% 
+  select(-X,-Employment) %>% 
+  rename(RD = ReadingDecoding,
+         RC = ReadingComprehension,
+         RF = ReadingFluency,
+         MC = Calculation,
+         MP = MathProblemSolving,
+         MF = MathFactFluency)
+
+R %>% dist %>% 
+  hclust %>% 
+  as.phylo %>% 
+  plot(show.tip.label = F)
+
+vhc <- R %>% t %>% dist 
+
+vhc %>% hclust("median") %>% 
+  as.phylo %>% 
+  plot(type = "radial")
+
+vhc %>% hclust("average") %>% 
+  as.phylo %>% 
+  plot(type = "radial")
+
+vhc %>% hclust("ward.D") %>% 
+  as.phylo %>% 
+  plot(type = "radial")
+
+vhc %>% hclust("ward.D2") %>% 
+  as.phylo %>% 
+  plot(type = "radial")
+
+vhc %>% hclust("complete") %>% 
+  as.phylo %>% 
+  plot(type = "radial")
+
+vhc %>% hclust("mcquitty") %>% 
+  as.phylo %>% 
+  plot(type = "radial")
+
+vhc %>% hclust("centroid") %>% 
+  as.phylo %>% 
+  plot(type = "radial")
+
+```
+
+# k-means cluster analysis
+
+```{r}
+k <- 5
+fit <- kmeans(d, k) # 5 cluster solution
+# get cluster means
+
+library(tidyr)
+
+clustermeans <- fit$centers %>% as.data.frame() %>% mutate(cluster = factor(1:k)) %>% gather(key = "Variable",value = "value", -cluster)
+
+ggplot(clustermeans, aes(Variable, value, color = cluster,group = cluster)) + geom_line()
+ 
+```
+
+# You Try
+
+An insurance company has been keeping detailed records of *n* * 1394 psychotherapists in its network. Via therapist and client surveys, the insurance company has collected information on several characteristics of each therapist:
+
+Degree to which the therapist...
+
+- ... has a behavioral orientation
+- ... attempts to promote insight 
+- ... is responsive to client concerns
+- ... is consistently warm to clients
+- ... confronts clients about difficult topics
+- ... is dismissive or disdainful to clients.
+- ... has difficulty maintaining proper boundaries 
+
+The compancy also keeps track of how much overall improvement clients make from the beginning of therapy to the end of therapy.
+
+1. Do a multiple regression of therapist characteristics predicting client improvement.
+2. Do a k-means cluster analysis of therapist characteristics with 8 clusters. Give your groups informative names.
+3. Do an ANOVA with your cluster variable predicting client improvement. Plot your results.
+4. What did you learn from the cluster analysis that was not apparent from the multiple regression?
+
+Data:
+
+http://my.ilstu.edu/~wjschne/444/TherapistCluster.csv
+
+```{r, echo=FALSE, include=FALSE}
+set.seed(20)
+GroupMeans <- matrix(c(
+    -1,1,0,0.5,0,1,1,-0.5, # Group1
+    -1,1,0.5,0.5,-0.5,0,1,0, # Group2
+    1,-1,-1,-1,1,0,0,0, # Group3
+    1,-1,1,1,1,-1,-1,2, # Group4
+    -1,1,1,1,-1,-1,-1,1, # Group5
+    0,1,1.5,2,1,-1,-1,2.5, # Group6
+    0,0,0,0,0,0,0,0.5, # Group7
+    1,1,1,1,1,-1,-1,1 # Group8
+ ), nrow = 8, byrow = TRUE)
+rownames(GroupMeans) <- c("Group1",
+                          "Group2",
+                          "Group3",
+                          "Group4",
+                          "Group5",
+                          "Group6",
+                          "Group7",
+                          "Group8")
+colnames(GroupMeans) <- c("Behavioral",
+                          "InsightOriented",
+                          "Responsive",
+                          "Warm",
+                          "Confrontational",
+                          "Dismissive",
+                          "BoundaryProblems",
+                          "ClientImprovement")
+
+library(lavaan)
+m <- "Behavioral ~ -0.5 * InsightOriented
+Responsive ~ 0.6 * Warm + 0.3 * Confrontational
+Dismissive ~ 0.6 * BoundaryProblems + -0.5 * Warm + 0.4 * Confrontational
+BoundaryProblems ~ -0.3 * Behavioral + -0.3 * InsightOriented
+ClientImprovement ~ 0.2 * Behavioral + 0.2 * InsightOriented + 0.4 * Responsive + 0.4 * Warm + 0.3 * Confrontational + -0.4 * BoundaryProblems
+"
+covd <- simulateData(m,sample.nobs = 1000, standardized = T) %>% cov
+covd <- covd[colnames(GroupMeans),colnames(GroupMeans)]
+ld <- list(8)
+ng <- round(runif(8,50,300))
+g1 <- mvtnorm::rmvnorm(n = ng[1],mean = GroupMeans[1,],sigma = covd) 
+g2 <- mvtnorm::rmvnorm(n = ng[2],mean = GroupMeans[2,],sigma = covd)
+g3 <- mvtnorm::rmvnorm(n = ng[3],mean = GroupMeans[3,],sigma = covd)
+g4 <- mvtnorm::rmvnorm(n = ng[4],mean = GroupMeans[4,],sigma = covd)
+g5 <- mvtnorm::rmvnorm(n = ng[5],mean = GroupMeans[5,],sigma = covd)
+g6 <- mvtnorm::rmvnorm(n = ng[6],mean = GroupMeans[6,],sigma = covd)
+g7 <- mvtnorm::rmvnorm(n = ng[7],mean = GroupMeans[7,],sigma = covd)
+g8 <- mvtnorm::rmvnorm(n = ng[8],mean = GroupMeans[8,],sigma = covd)
+
+d <- rbind(g1,g2,g3,g4,g5,g6,g7,g8) %>% round(2) %>% as.data.frame()
+
+write.csv(d,file = "TherapistCluster.csv")
+```
+
